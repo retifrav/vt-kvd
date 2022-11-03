@@ -1,11 +1,14 @@
 # dependencies
 import dearpygui.dearpygui as dpg
+import vt
 # standard libraries
 from time import sleep
 import argparse
 import sys
 import traceback
 import typing
+import pathlib
+
 # from typing import Tuple, Optional, Hashable, TypeVar
 
 from . import applicationPath, settingsFile
@@ -20,8 +23,10 @@ from .theme import (
     styleHorizontalPadding,
     styleScrollbarWidth
 )
+from .utils import sha1sum, getVirusTotalAPIkeyFromConfig
 
 debugMode: bool = False
+vtAPIkey: str = None
 
 mainWindowID: str = "main-window"
 
@@ -33,14 +38,156 @@ dpgColumnsMax: int = 64
 
 windowMinWidth: int = 900
 
+runningCheck: bool = False
+
 
 def showDPGabout() -> None:
     # dpg.hide_item("aboutWindow")
     dpg.show_about()
 
 
+def showLoading(isLoading) -> None:
+    global runningCheck
+
+    if isLoading:
+        dpg.hide_item("btn_runCheck")
+        dpg.configure_item("menu_runCheck", enabled=False)
+        dpg.show_item("loadingAnimation")
+        runningCheck = True
+    else:
+        dpg.hide_item("loadingAnimation")
+        dpg.show_item("btn_runCheck")
+        dpg.configure_item("menu_runCheck", enabled=True)
+        runningCheck = False
+
+
+def runCheck() -> None:
+    dpg.hide_item("resultsGroup")
+    if dpg.does_item_exist("resultsTable"):
+        dpg.delete_item("resultsTable")
+    dpg.hide_item("errorMessage")
+    dpg.set_value("errorMessage", "")
+
+    dpg.configure_item("menuSaveFile", enabled=False)
+    showLoading(True)
+
+    if vtAPIkey is None or not vtAPIkey:
+        dpg.set_value(
+            "errorMessage",
+            "No VirusTotal API key provided."
+        )
+        dpg.show_item("errorMessage")
+        showLoading(False)
+        return
+
+    pathToCheckStr: str = dpg.get_value("input_pathToCheck").strip()
+    if not pathToCheckStr:
+        dpg.set_value(
+            "errorMessage",
+            "No path to check provided."
+        )
+        dpg.show_item("errorMessage")
+        showLoading(False)
+        return
+
+    pathToCheck: pathlib.Path = pathlib.Path(pathToCheckStr)
+    if not pathToCheck.exists():
+        dpg.set_value(
+            "errorMessage",
+            "Provided path doesn't seem to exist."
+        )
+        dpg.show_item("errorMessage")
+        showLoading(False)
+        return
+    if not pathToCheck.is_file():
+        dpg.set_value(
+            "errorMessage",
+            "Provided path doesn't seem to be a file."
+        )
+        dpg.show_item("errorMessage")
+        showLoading(False)
+        return
+
+    try:
+        checksum = sha1sum(pathToCheck)
+        print(checksum)
+        with vt.Client(vtAPIkey) as c:
+            file = c.get_object(f"/files/{checksum}")
+            print(
+                "\n".join((
+                    str(file.type_tag),
+                    str(file.type_description),
+                    str(file.meaningful_name),
+                    str(file.times_submitted),
+                    str(file.unique_sources),
+                    str(file.first_submission_date),
+                    str(file.last_analysis_date),
+                    # str(file.last_analysis_results),
+                    str(file.last_analysis_stats),
+                    str(file.reputation)
+                ))
+            )
+    except vt.error.APIError as ex:
+        errorMsg: str = " ".join((
+            "Unknown error returned from VirusTotal API.",
+            "There might be more details in console/stderr"
+        ))
+        if ex.code == "NotFoundError":
+            errorMsg = " ".join((
+                "This file hasn't been scanned at VirusTotal yet,",
+                "so you might want to be the first one to do that",
+                "and upload it for scanning"
+            ))
+        elif ex.code == "WrongCredentialsError":
+            errorMsg = "Invalid, expired or revoked VirusTotal API key"
+        print(f"[ERROR] {errorMsg}. {ex}", file=sys.stderr)
+        dpg.set_value("errorMessage", f"{errorMsg}.")
+        dpg.show_item("errorMessage")
+        showLoading(False)
+        return
+    except Exception as ex:
+        errorMsg: str = "Couldn't check that path"
+        print(f"[ERROR] {errorMsg}. {ex}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        dpg.set_value(
+            "errorMessage",
+            f"{errorMsg}. There might be more details in console/stderr."
+        )
+        dpg.show_item("errorMessage")
+        showLoading(False)
+        return
+
+    showLoading(False)
+    dpg.show_item("resultsGroup")
+    dpg.configure_item("menuSaveFile", enabled=True)
+
+
+def saveResultsToFile(sender, app_data, user_data) -> None:
+    if debugMode:
+        print(f"[DEBUG] {app_data}")
+    # this check might be redundant,
+    # as dialog window apparently performs it on its own
+    resultsFileDir: pathlib.Path = pathlib.Path(app_data["current_path"])
+    if not resultsFileDir.is_dir():
+        print(
+            f"[ERROR] The {resultsFileDir} directory does not exist",
+            file=sys.stderr
+        )
+        return
+    resultsFile: pathlib.Path = resultsFileDir / app_data["file_name"]
+    try:
+        print("[NOT IMPLEMENTED] saving results to file")
+    except Exception as ex:
+        print(
+            f"[ERROR] Couldn't save results to {resultsFile}: {ex}",
+            file=sys.stderr
+        )
+        return
+
+
 def main() -> None:
     global debugMode
+    global vtAPIkey
 
     argParser = argparse.ArgumentParser(
         prog="vt-kvd",
@@ -50,6 +197,13 @@ def main() -> None:
         )),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False
+    )
+    argParser.add_argument(
+        "pathToCheck",
+        nargs="?",
+        type=pathlib.Path,
+        metavar="/path/to/check",
+        help="Path to what needs to be checked"
     )
     argParser.add_argument(
         "--version",
@@ -65,6 +219,10 @@ def main() -> None:
     # print(cliArgs)
 
     debugMode = cliArgs.debug
+
+    pathToCheck = cliArgs.pathToCheck
+    if pathToCheck is not None and not pathToCheck.exists():
+        raise SystemExit("[ERROR] Provided path doesn't seem to exist")
 
     dpg.create_context()
 
@@ -83,18 +241,18 @@ def main() -> None:
         #
         with dpg.menu_bar():
             with dpg.menu(label="File"):
-                # dpg.add_menu_item(
-                #     tag="menuExecuteQuery",
-                #     label="Execute query",
-                #     shortcut="Cmd/Ctrl + R",
-                #     callback=executeQuery
-                # )
+                dpg.add_menu_item(
+                    tag="menu_runCheck",
+                    label="Check that",
+                    shortcut="Cmd/Ctrl + R",
+                    callback=runCheck
+                )
                 dpg.add_spacer()
                 dpg.add_separator()
                 dpg.add_spacer()
                 dpg.add_menu_item(
                     tag="menuSaveFile",
-                    label="Save results to pickle...",
+                    label="Save results to file...",
                     enabled=False,
                     callback=lambda: dpg.show_item("dialogSaveFile")
                 )
@@ -145,8 +303,8 @@ def main() -> None:
         # -- contents
         #
         dpg.add_input_text(
-            tag="serviceURL",
-            hint="TAP service",
+            tag="input_pathToCheck",
+            hint="Path to check",
             width=-1
         )
         # dpg.add_input_text(
@@ -164,11 +322,11 @@ def main() -> None:
         #     multiline=True,
         #     tab_input=True
         # )
-        # dpg.add_button(
-        #     tag="btnExecuteQuery",
-        #     label="Execute query",
-        #     callback=executeQuery
-        # )
+        dpg.add_button(
+            tag="btn_runCheck",
+            label="Check that",
+            callback=runCheck
+        )
         dpg.add_loading_indicator(
             tag="loadingAnimation",
             radius=2,
@@ -194,16 +352,16 @@ def main() -> None:
     #
     # --- save file dialog
     #
-    # with dpg.file_dialog(
-    #     id="dialogSaveFile",
-    #     directory_selector=False,
-    #     width=800,
-    #     height=600,
-    #     modal=True,
-    #     show=False,
-    #     callback=saveResultsToPickle
-    # ):
-    #     dpg.add_file_extension(".pkl", color=(30, 225, 0))
+    with dpg.file_dialog(
+        id="dialogSaveFile",
+        directory_selector=False,
+        width=800,
+        height=600,
+        modal=True,
+        show=False,
+        callback=saveResultsToFile
+    ):
+        dpg.add_file_extension(".json", color=(30, 225, 0))
     #
     # --- error dialog
     #
@@ -300,17 +458,34 @@ def main() -> None:
         height=800,
         min_width=windowMinWidth,
         min_height=600
-        #small_icon=str(applicationPath/"icons/planet-128.ico"),
-        #large_icon=str(applicationPath/"icons/planet-256.ico")
+        # small_icon=str(applicationPath/"icons/planet-128.ico"),
+        # large_icon=str(applicationPath/"icons/planet-256.ico")
     )
 
     dpg.setup_dearpygui()
     dpg.show_viewport()
     dpg.set_primary_window(mainWindowID, True)
 
-    # things to do on application start
-    #dpg.set_value("serviceURL", examplesList["padc-system-planets"]["serviceURL"])
-    #dpg.set_value(queryTextID, examplesList["padc-system-planets"]["queryText"])
+    #
+    # --- things to do on application start
+    #
+    vtAPIkey = getVirusTotalAPIkeyFromConfig()
+    if vtAPIkey is None or not vtAPIkey:
+        errorMsg = "Could not find/read a config with VirusTotal API key"
+        print(f"[WARNING] {errorMsg}")
+        dpg.set_value("errorMessage", errorMsg)
+        dpg.show_item("errorMessage")
+    else:
+        if debugMode:
+            print(
+                " ".join((
+                    "[DEBUG] Has read the following VirusTotal API key",
+                    f"from config: {vtAPIkey}"
+                ))
+            )
+    if pathToCheck:
+        dpg.set_value("input_pathToCheck", pathToCheck)
+        runCheck()
 
     dpg.start_dearpygui()
 

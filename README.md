@@ -6,6 +6,7 @@
 - [Installing](#installing)
     - [From PyPI](#from-pypi)
     - [From sources](#from-sources)
+- [Configuration](#configuration)
 - [Running](#running)
 - [Platforms](#platforms)
 - [3rd-party](#3rd-party)
@@ -39,6 +40,21 @@ or:
 $ cd /path/to/repository/
 $ python -m build
 $ pip install ./dist/vt_kvd-0.1.0-py3-none-any.whl
+```
+
+## Configuration
+
+Config file `~/.config/vt-kvd/config.toml`:
+
+``` toml
+[API]
+key = "YOUR-VIRUSTOTAL-API-KEY"
+```
+
+If the main config file is missing, it will try to fallback to [vt-cli](https://github.com/VirusTotal/vt-cli)'s config at `~/.vt.toml`:
+
+``` toml
+apikey="YOUR-VIRUSTOTAL-API-KEY"
 ```
 
 ## Running
