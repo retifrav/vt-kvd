@@ -81,6 +81,7 @@ Tested on:
 
 - Python 3.8 or later
 - [Dear PyGui](https://pypi.org/project/dearpygui/) - application window and UI controls
+- [pandas](https://pypi.org/project/pandas/) - processing results
 - [vt-py](https://github.com/VirusTotal/vt-py) - VirusTotal API library
 
 ### Resources

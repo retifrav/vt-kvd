@@ -1,5 +1,6 @@
 # dependencies
 import dearpygui.dearpygui as dpg
+import pandas
 import vt
 # standard libraries
 from time import sleep
@@ -23,7 +24,11 @@ from .theme import (
     styleHorizontalPadding,
     styleScrollbarWidth
 )
-from .utils import sha1sum, getVirusTotalAPIkeyFromConfig
+from .utils import (
+    sha1sum,
+    getVirusTotalAPIkeyFromConfig,
+    parseAnalStats
+)
 
 debugMode: bool = False
 vtAPIkey: str = None
@@ -38,6 +43,7 @@ dpgColumnsMax: int = 64
 
 windowMinWidth: int = 900
 
+lastCheckResults: pandas.DataFrame = pandas.DataFrame()
 runningCheck: bool = False
 
 
@@ -62,6 +68,10 @@ def showLoading(isLoading) -> None:
 
 
 def runCheck() -> None:
+    global lastCheckResults
+    # clear previously saved results
+    lastCheckResults = pandas.DataFrame()
+
     dpg.hide_item("resultsGroup")
     if dpg.does_item_exist("resultsTable"):
         dpg.delete_item("resultsTable")
@@ -109,24 +119,21 @@ def runCheck() -> None:
         return
 
     try:
-        checksum = sha1sum(pathToCheck)
-        print(checksum)
         with vt.Client(vtAPIkey) as c:
+            checksum = sha1sum(pathToCheck)
             file = c.get_object(f"/files/{checksum}")
-            print(
-                "\n".join((
-                    str(file.type_tag),
-                    str(file.type_description),
-                    str(file.meaningful_name),
-                    str(file.times_submitted),
-                    str(file.unique_sources),
-                    str(file.first_submission_date),
-                    str(file.last_analysis_date),
-                    # str(file.last_analysis_results),
-                    str(file.last_analysis_stats),
-                    str(file.reputation)
-                ))
+            fileScanResults = pandas.DataFrame(
+                {
+                    "Name": str(file.meaningful_name),
+                    "Type": f"{str(file.type_tag)}/{str(file.type_description)}",
+                    "Times submitted": str(file.times_submitted),
+                    "First time": str(file.first_submission_date),
+                    # "Last time": str(file.last_analysis_date),
+                    "H/U/S/F/M/U": parseAnalStats(str(file.last_analysis_stats))
+                },
+                index=[0]
             )
+            lastCheckResults = pandas.concat([lastCheckResults, fileScanResults])
     except vt.error.APIError as ex:
         errorMsg: str = " ".join((
             "Unknown error returned from VirusTotal API.",
@@ -147,6 +154,73 @@ def runCheck() -> None:
         return
     except Exception as ex:
         errorMsg: str = "Couldn't check that path"
+        print(f"[ERROR] {errorMsg}. {ex}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        dpg.set_value(
+            "errorMessage",
+            f"{errorMsg}. There might be more details in console/stderr."
+        )
+        dpg.show_item("errorMessage")
+        showLoading(False)
+        return
+
+    rowsCount, columnsCount = lastCheckResults.shape
+    try:
+        with dpg.table(
+            parent="resultsGroup",
+            tag="resultsTable",
+            header_row=True,
+            resizable=True,
+            borders_outerH=True,
+            borders_innerV=True,
+            borders_innerH=True,
+            borders_outerV=True,
+            clipper=True,
+            # row_background=True,
+            # freeze_rows=0,
+            # freeze_columns=1,
+            # scrollY=True,
+            policy=dpg.mvTable_SizingStretchProp,
+            scrollX=True
+        ):
+            dpg.add_table_column(label="#")
+            for header in lastCheckResults:
+                dpg.add_table_column(
+                    label=header,
+                    tag=header.lower().replace(" ", "-")
+                )
+            with dpg.tooltip("h/u/s/f/m/u"):
+                dpg.add_text(
+                    "\n".join((
+                        "H - harmless",
+                        "U - unsupported",
+                        "S - suspicious",
+                        "F - failure",
+                        "M - malicious",
+                        "U - undetected"
+                    ))
+                )
+            for index, row in lastCheckResults.iterrows():
+                # reveal_type(index)
+                index = typing.cast(int, index)
+                with dpg.table_row():
+                    with dpg.table_cell():
+                        dpg.add_text(default_value=f"{index+1}")
+                    cellIndex = 1
+                    for cell in row:
+                        with dpg.table_cell():
+                            cellID = f"cell-{index+1}-{cellIndex}"
+                            dpg.add_text(
+                                tag=cellID,
+                                default_value=cell
+                            )
+                            dpg.bind_item_handler_registry(
+                                cellID,
+                                "cell-handler"
+                            )
+                        cellIndex += 1
+    except Exception as ex:
+        errorMsg = "Couldn't generate the results table"
         print(f"[ERROR] {errorMsg}. {ex}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         dpg.set_value(
@@ -183,6 +257,21 @@ def saveResultsToFile(sender, app_data, user_data) -> None:
             file=sys.stderr
         )
         return
+
+
+def cellClicked(sender, app_data) -> None:
+    # print(sender, app_data)
+
+    # mouse right click
+    if app_data[0] == 1:
+        cellValue = dpg.get_value(app_data[1])
+        # print(cellValue)
+        dpg.set_clipboard_text(cellValue)
+        dpg.set_value(app_data[1], "[copied]")
+        dpg.bind_item_theme(app_data[1], getCellHighlightedTheme())
+        sleep(1)
+        dpg.bind_item_theme(app_data[1], getCellDefaultTheme())
+        dpg.set_value(app_data[1], cellValue)
 
 
 def main() -> None:
@@ -346,7 +435,7 @@ def main() -> None:
         )
 
         with dpg.group(tag="resultsGroup", show=False):
-            dpg.add_text(default_value="Query results:")
+            dpg.add_text(default_value="Results:")
             with dpg.table(tag="resultsTable"):
                 dpg.add_table_column(label="Results")
     #
@@ -435,6 +524,10 @@ def main() -> None:
     dpg.bind_item_theme("aboutWindow", getWindowTheme())
     # dpg.bind_item_theme("errorDialog", getWindowTheme())
     # dpg.bind_item_theme("errorDialogText", getErrorTheme())
+
+    # mouse clicks handler for results table cells
+    with dpg.item_handler_registry(tag="cell-handler") as handler:
+        dpg.add_item_clicked_handler(callback=cellClicked)
 
     # keyboard shortcuts
     # with dpg.handler_registry():

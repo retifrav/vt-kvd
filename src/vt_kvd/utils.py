@@ -1,6 +1,8 @@
+import json
 import hashlib
 import pathlib
 import configparser
+#
 from typing import Optional
 
 
@@ -9,7 +11,8 @@ def sha1sum(pathToFile: pathlib.Path) -> str:
     b = bytearray(128*1024)
     mv = memoryview(b)
     with open(pathToFile, "rb", buffering=0) as f:
-        while n := f.readinto(mv):  # requires Python 3.8 or newer for :=
+        # requires Python 3.8 or newer for := assignment in while loop
+        while n := f.readinto(mv):
             h.update(mv[:n])
     return h.hexdigest()
 
@@ -49,3 +52,16 @@ def getVirusTotalAPIkeyFromConfig() -> Optional[str]:
     if vtAPIkey is not None:
         vtAPIkey = vtAPIkey.strip("\"")
     return vtAPIkey
+
+
+def parseAnalStats(analStats: str) -> str:
+    stats = json.loads(analStats.replace("'", "\""))
+    # print(json.dumps(stats, indent=4))
+    return "/".join((
+        str(stats["harmless"]),
+        str(stats["type-unsupported"]),
+        str(stats["suspicious"]),
+        str(stats["failure"]),
+        str(stats["malicious"]),
+        str(stats["undetected"])
+    ))
