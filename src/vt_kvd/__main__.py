@@ -25,13 +25,17 @@ from .theme import (
     styleScrollbarWidth
 )
 from .utils import (
-    sha1sum,
     getVirusTotalAPIkeyFromConfig,
+    sha1sum,
+    findFilesToCheck,
     parseAnalStats
 )
 
 debugMode: bool = False
+enableDirScan: bool = False
 vtAPIkey: str = None
+
+vtClient = None
 
 mainWindowID: str = "main-window"
 
@@ -45,6 +49,11 @@ windowMinWidth: int = 900
 
 lastCheckResults: pandas.DataFrame = pandas.DataFrame()
 runningCheck: bool = False
+
+
+def applicationClosing():
+    dpg.save_init_file(settingsFile)
+    vtClient.close()
 
 
 def showDPGabout() -> None:
@@ -81,15 +90,6 @@ def runCheck() -> None:
     dpg.configure_item("menuSaveFile", enabled=False)
     showLoading(True)
 
-    if vtAPIkey is None or not vtAPIkey:
-        dpg.set_value(
-            "errorMessage",
-            "No VirusTotal API key provided."
-        )
-        dpg.show_item("errorMessage")
-        showLoading(False)
-        return
-
     pathToCheckStr: str = dpg.get_value("input_pathToCheck").strip()
     if not pathToCheckStr:
         dpg.set_value(
@@ -109,31 +109,94 @@ def runCheck() -> None:
         dpg.show_item("errorMessage")
         showLoading(False)
         return
-    if not pathToCheck.is_file():
+    if not pathToCheck.is_file() and not pathToCheck.is_dir():
         dpg.set_value(
             "errorMessage",
-            "Provided path doesn't seem to be a file."
+            "Provided path is neither file nor directory."
         )
         dpg.show_item("errorMessage")
         showLoading(False)
         return
+    filesToCheck: List[pathlib.Path] = []
+    if pathToCheck.is_dir():
+        if not enableDirScan:
+            dpg.set_value(
+                "errorMessage",
+                " ".join((
+                    "Provided path is a directory and not a file.",
+                    "Scanning directories is disabled by default.",
+                    "If you would like to enable it, launch the application",
+                    "with --enable-dir-scan. That will also require you",
+                    "to have `libmagic` binary installed in the system."
+                ))
+            )
+            dpg.show_item("errorMessage")
+            showLoading(False)
+            return
+        print(
+            " ".join((
+                "\n[WARNING] Provided path is a directory!",
+                "The application will try to find the suitable files",
+                "by guessing their type based on magic numbers.",
+                "This is not an absolutely reliable way,",
+                "so it is recommended that you check the files",
+                "of interest individually by explicitly providing",
+                "their full paths one by one. Another thing to consider",
+                "is that VirusTotal API has a limitation of 500 requests",
+                "per day for standard free public accounts, so you can",
+                "quickly exceed that amount by scanning directories",
+                "instead of individual files"
+            ))
+        )
+        filesToCheck = findFilesToCheck(pathToCheck, debugMode)
+    else:
+        filesToCheck.append(pathToCheck)
+    if not filesToCheck:
+        dpg.set_value(
+            "errorMessage",
+            "Did not found suitable files in the provided directory."
+        )
+        dpg.show_item("errorMessage")
+        showLoading(False)
+        return
+    if debugMode:
+        print("\n[DEBUG] Files to check:")
+        for f in filesToCheck:
+            print(f"- {f.as_posix()}")
 
     try:
-        with vt.Client(vtAPIkey) as c:
-            checksum = sha1sum(pathToCheck)
-            file = c.get_object(f"/files/{checksum}")
+        idx: int = 0
+        cnt = len(filesToCheck)
+        print()
+        for f in filesToCheck:
+            print(f"Checking file {idx+1}/{cnt}...")
+            checksum = sha1sum(f)
+            file = vtClient.get_object(f"/files/{checksum}")
             fileScanResults = pandas.DataFrame(
                 {
-                    "Name": str(file.meaningful_name),
-                    "Type": f"{str(file.type_tag)}/{str(file.type_description)}",
+                    "Name": (
+                        str(file.meaningful_name)
+                        if file.get("meaningful_name")
+                        else f"{f.name}(*)"
+                    ),
+                    "Path": f.as_posix(),
+                    "Type": "/".join((
+                        str(file.type_tag),
+                        str(file.type_description)
+                    )),
                     "Times submitted": str(file.times_submitted),
-                    "First time": str(file.first_submission_date),
-                    # "Last time": str(file.last_analysis_date),
-                    "H/U/S/F/M/U": parseAnalStats(str(file.last_analysis_stats))
+                    # "First time": str(file.first_submission_date),
+                    "Last time": str(file.last_analysis_date),
+                    "H/U/S/F/M/U": parseAnalStats(
+                        str(file.last_analysis_stats)
+                    )
                 },
-                index=[0]
+                index=[idx]
             )
-            lastCheckResults = pandas.concat([lastCheckResults, fileScanResults])
+            lastCheckResults = pandas.concat(
+                [lastCheckResults, fileScanResults]
+            )
+            idx += 1
     except vt.error.APIError as ex:
         errorMsg: str = " ".join((
             "Unknown error returned from VirusTotal API.",
@@ -147,6 +210,8 @@ def runCheck() -> None:
             ))
         elif ex.code == "WrongCredentialsError":
             errorMsg = "Invalid, expired or revoked VirusTotal API key"
+        elif ex.code == "QuotaExceededError":
+            errorMsg = "You've exceeded your VirusTotal API quota"
         print(f"[ERROR] {errorMsg}. {ex}", file=sys.stderr)
         dpg.set_value("errorMessage", f"{errorMsg}.")
         dpg.show_item("errorMessage")
@@ -180,14 +245,22 @@ def runCheck() -> None:
             # freeze_rows=0,
             # freeze_columns=1,
             # scrollY=True,
-            policy=dpg.mvTable_SizingStretchProp,
+            policy=dpg.mvTable_SizingFixedFit,
             scrollX=True
         ):
             dpg.add_table_column(label="#")
-            for header in lastCheckResults:
+            for header in (h for h in lastCheckResults.columns if h != "Path"):
                 dpg.add_table_column(
                     label=header,
                     tag=header.lower().replace(" ", "-")
+                )
+            with dpg.tooltip("name"):
+                dpg.add_text(
+                    "\n".join((
+                        "(*) means that VirusTotal has no",
+                        "`meaningful_name` property for this file,",
+                        "and so local file name is used instead"
+                    ))
                 )
             with dpg.tooltip("h/u/s/f/m/u"):
                 dpg.add_text(
@@ -200,7 +273,7 @@ def runCheck() -> None:
                         "U - undetected"
                     ))
                 )
-            for index, row in lastCheckResults.iterrows():
+            for index, row in lastCheckResults.drop(columns="Path").iterrows():
                 # reveal_type(index)
                 index = typing.cast(int, index)
                 with dpg.table_row():
@@ -218,6 +291,11 @@ def runCheck() -> None:
                                 cellID,
                                 "cell-handler"
                             )
+                            if cellIndex == 1:
+                                with dpg.tooltip(cellID):
+                                    dpg.add_text(
+                                        lastCheckResults.at[index, "Path"]
+                                    )
                         cellIndex += 1
     except Exception as ex:
         errorMsg = "Couldn't generate the results table"
@@ -276,7 +354,9 @@ def cellClicked(sender, app_data) -> None:
 
 def main() -> None:
     global debugMode
+    global enableDirScan
     global vtAPIkey
+    global vtClient
 
     argParser = argparse.ArgumentParser(
         prog="vt-kvd",
@@ -300,6 +380,11 @@ def main() -> None:
         version=f"%(prog)s {__version__}"
     )
     argParser.add_argument(
+        "--enable-dir-scan",
+        action='store_true',
+        help="enable scanning directories (default: %(default)s)"
+    )
+    argParser.add_argument(
         "--debug",
         action='store_true',
         help="enable debug/dev mode (default: %(default)s)"
@@ -308,6 +393,7 @@ def main() -> None:
     # print(cliArgs)
 
     debugMode = cliArgs.debug
+    enableDirScan = cliArgs.enable_dir_scan
 
     pathToCheck = cliArgs.pathToCheck
     if pathToCheck is not None and not pathToCheck.exists():
@@ -319,7 +405,7 @@ def main() -> None:
 
     # dpg.set_frame_callback(2, callback=updateGeometry)
     # dpg.set_viewport_resize_callback(callback=updateGeometry)
-    dpg.set_exit_callback(callback=lambda: dpg.save_init_file(settingsFile))
+    dpg.set_exit_callback(callback=applicationClosing)
 
     #
     # --- main window
@@ -564,6 +650,7 @@ def main() -> None:
     #
     vtAPIkey = getVirusTotalAPIkeyFromConfig()
     if vtAPIkey is None or not vtAPIkey:
+        vtAPIkey = "MISSING-VIRUSTOTAL-API-KEY"
         errorMsg = "Could not find/read a config with VirusTotal API key"
         print(f"[WARNING] {errorMsg}")
         dpg.set_value("errorMessage", errorMsg)
@@ -572,13 +659,13 @@ def main() -> None:
         if debugMode:
             print(
                 " ".join((
-                    "[DEBUG] Has read the following VirusTotal API key",
+                    "[DEBUG] Got the following VirusTotal API key",
                     f"from config: {vtAPIkey}"
                 ))
             )
+    vtClient = vt.Client(vtAPIkey)
     if pathToCheck:
         dpg.set_value("input_pathToCheck", pathToCheck)
-        runCheck()
 
     dpg.start_dearpygui()
 

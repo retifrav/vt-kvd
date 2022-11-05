@@ -1,20 +1,16 @@
+# dependencies
+import magic
+# standard libraries
 import json
 import hashlib
 import pathlib
 import configparser
 #
-from typing import Optional
+from typing import Optional, List
 
-
-def sha1sum(pathToFile: pathlib.Path) -> str:
-    h = hashlib.sha1()
-    b = bytearray(128*1024)
-    mv = memoryview(b)
-    with open(pathToFile, "rb", buffering=0) as f:
-        # requires Python 3.8 or newer for := assignment in while loop
-        while n := f.readinto(mv):
-            h.update(mv[:n])
-    return h.hexdigest()
+mimeTypesToCheck: List[str] = [
+    "application/x-mach-binary"
+]
 
 
 def getVirusTotalAPIkeyFromConfig() -> Optional[str]:
@@ -31,6 +27,7 @@ def getVirusTotalAPIkeyFromConfig() -> Optional[str]:
         try:
             if fromVTcliConfig:
                 vtConfigContent = None
+                # configparser requires TOML files to have sections
                 with open(vtConfig, "r") as f:
                     vtConfigContent = f"[default]\n{f.read()}"
                 config.read_string(vtConfigContent)
@@ -52,6 +49,45 @@ def getVirusTotalAPIkeyFromConfig() -> Optional[str]:
     if vtAPIkey is not None:
         vtAPIkey = vtAPIkey.strip("\"")
     return vtAPIkey
+
+
+def sha1sum(pathToFile: pathlib.Path) -> str:
+    h = hashlib.sha1()
+    b = bytearray(128*1024)
+    mv = memoryview(b)
+    with open(pathToFile, "rb", buffering=0) as f:
+        # requires Python 3.8 or newer for := assignment in while loop
+        while n := f.readinto(mv):
+            h.update(mv[:n])
+    return h.hexdigest()
+
+
+def findFilesToCheck(
+    pathToDirectory: pathlib.Path,
+    printFilesListing: bool = False
+) -> List[pathlib.Path]:
+    filesToCheck: List[pathlib.Path] = []
+    if printFilesListing:
+        print(f"\n[DEBUG] All files in {pathToDirectory.as_posix()}:")
+    for p in pathToDirectory.rglob("*"):
+        if p.is_file() and not p.is_symlink():
+            if printFilesListing:
+                # print(p)
+                print(
+                    "-",
+                    p.name,
+                    "|",
+                    magic.from_buffer(
+                        open(p, "rb").read(2048),
+                        mime=True
+                    )
+                )
+            if magic.from_buffer(
+                open(p, "rb").read(2048),
+                mime=True
+            ) in mimeTypesToCheck:
+                filesToCheck.append(p)
+    return filesToCheck
 
 
 def parseAnalStats(analStats: str) -> str:

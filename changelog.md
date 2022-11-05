@@ -12,5 +12,4 @@ Released on `?`.
 
 - first version
 - reading VirusTotal API key from a config file
-- calculating SHA1 hash for a provided file to check
-- getting existing scan results for given SHA1 hash
+- calculating SHA1 hashes getting existing scan results
