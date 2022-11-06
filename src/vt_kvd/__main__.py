@@ -1,5 +1,6 @@
 # dependencies
 import dearpygui.dearpygui as dpg
+from dearpygui.demo import show_demo
 import pandas
 import vt
 # standard libraries
@@ -7,13 +8,17 @@ from time import sleep
 import argparse
 import sys
 import traceback
-import typing
 import pathlib
-
-# from typing import Tuple, Optional, Hashable, TypeVar
+import webbrowser
+import typing
+from typing import Optional, List
 
 from . import applicationPath, settingsFile
-from .version import __version__, __copyright__
+from .version import (
+    __version__,
+    __copyright__,
+    __platform__
+)
 from .theme import (
     getGlobalFont,
     getGlobalTheme,
@@ -21,6 +26,7 @@ from .theme import (
     getWindowTheme,
     getCellHighlightedTheme,
     getCellDefaultTheme,
+    getHyperlinkTheme,
     styleHorizontalPadding,
     styleScrollbarWidth
 )
@@ -33,11 +39,14 @@ from .utils import (
 
 debugMode: bool = False
 enableDirScan: bool = False
-vtAPIkey: str = None
+vtAPIkey: Optional[str] = None
+vtAgent: str = f"vt-kvd/{__version__} {__platform__}"
 
 vtClient = None
 
 mainWindowID: str = "main-window"
+
+repositoryURL: str = "https://github.com/retifrav/vt-kvd"
 
 # Dear PyGui (and Dear ImGui) has a limitation of 64 columns in a table
 # https://dearpygui.readthedocs.io/en/latest/documentation/tables.html
@@ -56,12 +65,20 @@ def applicationClosing():
     vtClient.close()
 
 
+def add_hyperlink(text: str, address: str):
+    b = dpg.add_button(
+        label=text,
+        callback=lambda: webbrowser.open(address)
+    )
+    dpg.bind_item_theme(b, getHyperlinkTheme())
+
+
 def showDPGabout() -> None:
-    # dpg.hide_item("aboutWindow")
+    dpg.hide_item("window_about")
     dpg.show_about()
 
 
-def showLoading(isLoading) -> None:
+def showLoading(isLoading: bool) -> None:
     global runningCheck
 
     if isLoading:
@@ -74,6 +91,57 @@ def showLoading(isLoading) -> None:
         dpg.show_item("btn_runCheck")
         dpg.configure_item("menu_runCheck", enabled=True)
         runningCheck = False
+
+
+def getCurrentAPIquota() -> None:
+    dpg.hide_item("errorMessageQuotas")
+    dpg.set_value("errorMessageQuotas", "")
+    dpg.hide_item("btn_getQuotas")
+    dpg.show_item("loadingAnimationQuotas")
+
+    try:
+        quotas = vtClient.get_data(f"/users/{vtAPIkey}/overall_quotas")
+        if quotas and quotas is not None:
+            dpg.set_value(
+                "cell_quotaHourly",
+                "/".join((
+                    str(quotas["api_requests_hourly"]["user"]["used"]),
+                    str(quotas["api_requests_hourly"]["user"]["allowed"])
+                ))
+            )
+            dpg.set_value(
+                "cell_quotaDaily",
+                "/".join((
+                    str(quotas["api_requests_daily"]["user"]["used"]),
+                    str(quotas["api_requests_daily"]["user"]["allowed"])
+                ))
+            )
+            dpg.set_value(
+                "cell_quotaMonthly",
+                "/".join((
+                    str(quotas["api_requests_monthly"]["user"]["used"]),
+                    str(quotas["api_requests_monthly"]["user"]["allowed"])
+                ))
+            )
+    except Exception as ex:
+        errorMsg: str = "Couldn't get current quotas"
+        print(f"[ERROR] {errorMsg}. {ex}", file=sys.stderr)
+        if debugMode:
+            traceback.print_exc(file=sys.stderr)
+        dpg.set_value(
+            "errorMessageQuotas",
+            f"{errorMsg}. There might be more details in console/stderr."
+        )
+        dpg.show_item("errorMessageQuotas")
+
+    dpg.hide_item("loadingAnimationQuotas")
+    dpg.show_item("btn_getQuotas")
+
+
+def showQuotaWindow() -> None:
+    dpg.hide_item("menu_getAPIquota")
+    dpg.show_item("window_apiQuota")
+    getCurrentAPIquota()
 
 
 def runCheck() -> None:
@@ -198,7 +266,7 @@ def runCheck() -> None:
             )
             idx += 1
     except vt.error.APIError as ex:
-        errorMsg: str = " ".join((
+        errorMsg = " ".join((
             "Unknown error returned from VirusTotal API.",
             "There might be more details in console/stderr"
         ))
@@ -218,9 +286,10 @@ def runCheck() -> None:
         showLoading(False)
         return
     except Exception as ex:
-        errorMsg: str = "Couldn't check that path"
+        errorMsg = "Couldn't check that path"
         print(f"[ERROR] {errorMsg}. {ex}", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
+        if debugMode:
+            traceback.print_exc(file=sys.stderr)
         dpg.set_value(
             "errorMessage",
             f"{errorMsg}. There might be more details in console/stderr."
@@ -240,13 +309,13 @@ def runCheck() -> None:
             borders_innerV=True,
             borders_innerH=True,
             borders_outerV=True,
-            clipper=True,
+            clipper=True
             # row_background=True,
             # freeze_rows=0,
             # freeze_columns=1,
             # scrollY=True,
-            policy=dpg.mvTable_SizingFixedFit,
-            scrollX=True
+            # policy=dpg.mvTable_SizingFixedFit,
+            # scrollX=True
         ):
             dpg.add_table_column(label="#")
             for header in (h for h in lastCheckResults.columns if h != "Path"):
@@ -408,6 +477,155 @@ def main() -> None:
     dpg.set_exit_callback(callback=applicationClosing)
 
     #
+    # --- save file dialog
+    #
+    with dpg.file_dialog(
+        id="dialogSaveFile",
+        directory_selector=False,
+        width=800,
+        height=600,
+        modal=True,
+        show=False,
+        callback=saveResultsToFile
+    ):
+        dpg.add_file_extension(".json", color=(30, 225, 0))
+    #
+    # --- error dialog
+    #
+    # with dpg.window(
+    #     tag="errorDialog",
+    #     label="Error",
+    #     modal=True,
+    #     show=False,
+    #     width=300
+    # ):
+    #     dpg.add_text(
+    #         tag="errorDialogText",
+    #         default_value="Unknown error"
+    #     )
+    #     dpg.add_button(
+    #         label="Close",
+    #         callback=lambda: dpg.hide_item("errorDialog")
+    #     )
+    #     dpg.add_spacer(height=2)
+    #
+    # --- about window
+    #
+    with dpg.window(
+        tag="window_about",
+        label="About application",
+        no_collapse=True,
+        modal=True,
+        min_size=(780, 380),
+        show=False
+    ):
+        dpg.add_text(
+            "".join((
+                "A VirusTotal ",
+                "GUI client."
+            ))
+        )
+
+        dpg.add_text(f"Version: {__version__}")
+
+        dpg.add_text("License: GPLv3")
+        with dpg.group(horizontal=True):
+            dpg.add_text("Source code:")
+            add_hyperlink(repositoryURL, repositoryURL)
+
+        dpg.add_text(__copyright__)
+
+        dpg.add_spacer()
+        dpg.add_separator()
+        dpg.add_spacer(height=5)
+        with dpg.group(horizontal=True):
+            dpg.add_text("Created with Dear PyGui")
+            dpg.add_button(
+                label="about that...",
+                callback=showDPGabout
+            )
+        dpg.add_spacer(height=5)
+        dpg.add_separator()
+        dpg.add_spacer(height=10)
+        dpg.add_button(
+            label="Close",
+            callback=lambda: dpg.hide_item("window_about")
+        )
+        dpg.add_spacer(height=2)
+    #
+    # --- VirusTotal API quota window
+    #
+    with dpg.window(
+        tag="window_apiQuota",
+        label="VirusTotal API quota",
+        min_size=(400, 290),
+        show=False,
+        on_close=lambda: dpg.show_item("menu_getAPIquota")
+    ):
+        dpg.add_text("Your current API requests quotas:")
+        with dpg.table(
+            tag="quotaTable",
+            header_row=True,
+            # resizable=True,
+            borders_outerH=True,
+            borders_innerV=True,
+            borders_innerH=True,
+            borders_outerV=True
+            # clipper=True,
+            # row_background=True,
+            # freeze_rows=0,
+            # freeze_columns=1,
+            # scrollY=True,
+            # policy=dpg.mvTable_SizingFixedFit,
+            # scrollX=True
+        ):
+            dpg.add_table_column(label="Quota")
+            dpg.add_table_column(label="Used/Total")
+            with dpg.table_row():
+                with dpg.table_cell():
+                    dpg.add_text(default_value="Hourly")
+                with dpg.table_cell():
+                    dpg.add_text(
+                        tag="cell_quotaHourly",
+                        default_value="?/?"
+                    )
+            with dpg.table_row():
+                with dpg.table_cell():
+                    dpg.add_text(default_value="Daily")
+                with dpg.table_cell():
+                    dpg.add_text(
+                        tag="cell_quotaDaily",
+                        default_value="?/?"
+                    )
+            with dpg.table_row():
+                with dpg.table_cell():
+                    dpg.add_text(default_value="Monthly")
+                with dpg.table_cell():
+                    dpg.add_text(
+                        tag="cell_quotaMonthly",
+                        default_value="?/?"
+                    )
+        dpg.add_spacer()
+        dpg.add_button(
+            tag="btn_getQuotas",
+            label="Refresh",
+            callback=getCurrentAPIquota
+        )
+        dpg.add_loading_indicator(
+            tag="loadingAnimationQuotas",
+            radius=2,
+            speed=3,
+            indent=10,
+            show=False
+        )
+        dpg.add_text(
+            tag="errorMessageQuotas",
+            default_value="Error",
+            # https://github.com/hoffstadt/DearPyGui/issues/1275
+            wrap=350,  # window width - 50
+            show=False
+        )
+    #
     # --- main window
     #
     with dpg.window(tag=mainWindowID):
@@ -418,9 +636,15 @@ def main() -> None:
             with dpg.menu(label="File"):
                 dpg.add_menu_item(
                     tag="menu_runCheck",
-                    label="Check that",
+                    label="Check the path",
                     shortcut="Cmd/Ctrl + R",
                     callback=runCheck
+                )
+                dpg.add_spacer()
+                dpg.add_menu_item(
+                    tag="menu_getAPIquota",
+                    label="Get VirusTotal API quota",
+                    callback=showQuotaWindow
                 )
                 dpg.add_spacer()
                 dpg.add_separator()
@@ -464,15 +688,29 @@ def main() -> None:
                         label="Styling",
                         callback=lambda: dpg.show_style_editor()
                     )
+                    dpg.add_spacer()
+                    dpg.add_separator()
+                    dpg.add_spacer()
                     dpg.add_menu_item(
-                        label="ImGui demo",
+                        label="Documentation",
+                        callback=lambda: dpg.show_documentation()
+                    )
+                    dpg.add_spacer()
+                    dpg.add_separator()
+                    dpg.add_spacer()
+                    dpg.add_menu_item(
+                        label="Dear PyGui demo",
+                        callback=lambda: show_demo()
+                    )
+                    dpg.add_menu_item(
+                        label="Dear ImGui demo",
                         callback=lambda: dpg.show_imgui_demo()
                     )
 
             with dpg.menu(label="Help"):
                 dpg.add_menu_item(
                     label="About...",
-                    callback=lambda: dpg.show_item("aboutWindow")
+                    callback=lambda: dpg.show_item("window_about")
                 )
         #
         # -- contents
@@ -524,90 +762,14 @@ def main() -> None:
             dpg.add_text(default_value="Results:")
             with dpg.table(tag="resultsTable"):
                 dpg.add_table_column(label="Results")
-    #
-    # --- save file dialog
-    #
-    with dpg.file_dialog(
-        id="dialogSaveFile",
-        directory_selector=False,
-        width=800,
-        height=600,
-        modal=True,
-        show=False,
-        callback=saveResultsToFile
-    ):
-        dpg.add_file_extension(".json", color=(30, 225, 0))
-    #
-    # --- error dialog
-    #
-    # with dpg.window(
-    #     tag="errorDialog",
-    #     label="Error",
-    #     modal=True,
-    #     show=False,
-    #     width=300
-    # ):
-    #     dpg.add_text(
-    #         tag="errorDialogText",
-    #         default_value="Unknown error"
-    #     )
-    #     dpg.add_button(
-    #         label="Close",
-    #         callback=lambda: dpg.hide_item("errorDialog")
-    #     )
-    #     dpg.add_spacer(height=2)
-    #
-    # --- about window
-    #
-    with dpg.window(
-        tag="aboutWindow",
-        label="About application",
-        # https://github.com/retifrav/tap-adql-sandbox/issues/6
-        # modal=True,
-        min_size=(780, 380),
-        show=False
-    ):
-        dpg.add_text(
-            "".join((
-                "A VirusTotal ",
-                "GUI client."
-            ))
-        )
-
-        dpg.add_text(f"Version: {__version__}")
-
-        dpg.add_text(
-            "".join((
-                "License: GPLv3\n",
-                "Source code: https://github.com/retifrav/vt-kvd"
-            ))
-        )
-
-        dpg.add_text(__copyright__)
-
-        dpg.add_spacer()
-        dpg.add_separator()
-        dpg.add_spacer(height=5)
-        with dpg.group(horizontal=True):
-            dpg.add_text("Created with Dear PyGui")
-            dpg.add_button(
-                label="about that...",
-                callback=showDPGabout
-            )
-        dpg.add_spacer(height=5)
-        dpg.add_separator()
-        dpg.add_spacer(height=10)
-        dpg.add_button(
-            label="Close",
-            callback=lambda: dpg.hide_item("aboutWindow")
-        )
-        dpg.add_spacer(height=2)
 
     # themes/styles bindings
     dpg.bind_font(getGlobalFont())
     dpg.bind_theme(getGlobalTheme())
     dpg.bind_item_theme("errorMessage", getErrorTheme())
-    dpg.bind_item_theme("aboutWindow", getWindowTheme())
+    dpg.bind_item_theme("errorMessageQuotas", getErrorTheme())
+    dpg.bind_item_theme("window_about", getWindowTheme())
+    dpg.bind_item_theme("window_apiQuota", getWindowTheme())
     # dpg.bind_item_theme("errorDialog", getWindowTheme())
     # dpg.bind_item_theme("errorDialogText", getErrorTheme())
 
@@ -663,7 +825,14 @@ def main() -> None:
                     f"from config: {vtAPIkey}"
                 ))
             )
-    vtClient = vt.Client(vtAPIkey)
+    if debugMode:
+        print(
+            " ".join((
+                "[DEBUG] Creating VirusTotal client",
+                f"with the following agent value: {vtAgent}"
+            ))
+        )
+    vtClient = vt.Client(vtAPIkey, agent=vtAgent)
     if pathToCheck:
         dpg.set_value("input_pathToCheck", pathToCheck)
 

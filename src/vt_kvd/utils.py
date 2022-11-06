@@ -1,6 +1,8 @@
 # dependencies
 import magic
 # standard libraries
+import sys
+import traceback
 import json
 import hashlib
 import pathlib

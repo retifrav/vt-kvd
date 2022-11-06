@@ -11,6 +11,7 @@
         - [libmagic](#libmagic)
 - [Configuration](#configuration)
 - [Running](#running)
+    - [User agent](#user-agent)
     - [Scanning directories](#scanning-directories)
 - [Platforms](#platforms)
 - [3rd-party](#3rd-party)
@@ -78,6 +79,16 @@ apikey="YOUR-VIRUSTOTAL-API-KEY"
 ``` sh
 $ vt-kvd --help
 ```
+
+### User agent
+
+The application uses [platform](https://docs.python.org/3/library/platform.html) module to compose the agent string which is sent to VirusTotal API on every request. The full value can look like this:
+
+``` sh
+vt-kvd/0.1.0 macOS-12.6.1-x86_64-i386-64bit
+```
+
+It is not (*yet?*) configurable, but you should probably be aware of its existence anyway.
 
 ### Scanning directories
 
