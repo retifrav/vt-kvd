@@ -11,7 +11,9 @@ import configparser
 from typing import Optional, List
 
 mimeTypesToCheck: List[str] = [
-    "application/x-mach-binary"
+    # "application/x-archive",  # Windows | *.lib
+    "application/x-dosexec",  # Windows | *.exe, *.dll
+    "application/x-mach-binary"  # Mac OS | executables, *.a
 ]
 
 
