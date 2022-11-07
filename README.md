@@ -57,7 +57,11 @@ All the dependencies are automatically installed with `pip`. But `python-magic` 
 
 - Mac OS (*Homebrew*): `brew install libmagic`
 - GNU/Linux (*APT*): `sudo apt install libmagic1`
-- Windows: well, the easiest probably would be to use [alternative package](https://pypi.org/project/python-magic-bin/) instead of `python-magic`, because that one bundles required `libmagic` binary. Or perhaps you could try to build it from [sources](https://github.com/julian-r/file-windows)
+- Windows: the easiest will be to use [alternative package](https://github.com/julian-r/python-magic) instead of `python-magic`, because that one bundles required `libmagic` binary (*and actually you can probably use that package on non-Windows platforms too*):
+  ``` sh
+  $ pip uninstall python-magic
+  $ pip install python-magic-bin
+  ```
 
 ## Configuration
 
@@ -106,7 +110,7 @@ Tested on:
     + ?, Intel
     + ?, Apple silicon
 - Windows:
-    + ?
+    + 11
 - GNU/Linux:
     + ?
 
