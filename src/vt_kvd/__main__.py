@@ -216,7 +216,20 @@ def runCheck() -> None:
                 "instead of individual files"
             ))
         )
-        filesToCheck = findFilesToCheck(pathToCheck, debugMode)
+        try:
+            filesToCheck = findFilesToCheck(pathToCheck, debugMode)
+        except Exception as ex:
+            errorMsg = "Couldn't scan the directory"
+            print(f"[ERROR] {errorMsg}. {ex}", file=sys.stderr)
+            if debugMode:
+                traceback.print_exc(file=sys.stderr)
+            dpg.set_value(
+                "errorMessage",
+                f"{errorMsg}. There might be more details in console/stderr."
+            )
+            dpg.show_item("errorMessage")
+            showLoading(False)
+            return
     else:
         filesToCheck.append(pathToCheck)
     if not filesToCheck:

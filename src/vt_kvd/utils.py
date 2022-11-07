@@ -1,5 +1,15 @@
 # dependencies
-import magic
+try:
+    import magic
+except ImportError:
+    print(
+        " ".join((
+            "[WARNING] Could not import magic module, you probably",
+            "don't have libmagic binary installed in your system. Trying",
+            "to use directories scanning functionality will likely",
+            "result in error"
+        ))
+    )
 # standard libraries
 import sys
 import traceback
