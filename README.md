@@ -121,7 +121,11 @@ Tested on:
 - Python 3.8 or later
 - [Dear PyGui](https://pypi.org/project/dearpygui/) - application window and UI controls
 - [pandas](https://pypi.org/project/pandas/) - processing results
-- [python-magic](https://github.com/ahupp/python-magic) - finding executables and libraries
+- for [detecting](#scanning-directories) executables and libraries, either of these two:
+    + [python-magic](https://github.com/ahupp/python-magic) (*with `libmagic` to be installed separately from your system package manager*)
+        * installed by default
+    + [python-magic-bin](https://github.com/julian-r/python-magic) (*with bundled `libmagic`*)
+        * needs to be manually installed instead of the other one (*which needs to be uninstalled*)
 - [vt-py](https://github.com/VirusTotal/vt-py) - VirusTotal API library
 
 ### Resources
