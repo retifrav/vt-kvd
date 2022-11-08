@@ -66,8 +66,17 @@ def getVirusTotalAPIkeyFromConfig() -> Optional[str]:
     return vtAPIkey
 
 
-def sha1sum(pathToFile: pathlib.Path) -> str:
-    h = hashlib.sha1()
+def calculateSHAchecksum(
+    pathToFile: pathlib.Path,
+    shaType: str = "sha1"
+) -> str:
+    h = None
+    if shaType == "sha1":
+        h = hashlib.sha1()
+    elif shaType == "sha256":
+        h = hashlib.sha256()
+    else:
+        raise Exception(f"Unknown SHA type provided: {shaType}")
     b = bytearray(128*1024)
     mv = memoryview(b)
     with open(pathToFile, "rb", buffering=0) as f:

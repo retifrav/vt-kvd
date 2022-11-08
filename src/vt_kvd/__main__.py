@@ -32,7 +32,7 @@ from .theme import (
 )
 from .utils import (
     getVirusTotalAPIkeyFromConfig,
-    sha1sum,
+    calculateSHAchecksum,
     findFilesToCheck,
     parseAnalStats
 )
@@ -47,6 +47,7 @@ vtClient = None
 mainWindowID: str = "main-window"
 
 repositoryURL: str = "https://github.com/retifrav/vt-kvd"
+vtReportBaseURL: str = "https://www.virustotal.com/gui/file"
 
 # Dear PyGui (and Dear ImGui) has a limitation of 64 columns in a table
 # https://dearpygui.readthedocs.io/en/latest/documentation/tables.html
@@ -144,6 +145,22 @@ def showQuotaWindow() -> None:
     getCurrentAPIquota()
 
 
+def keyPressCallback(sender, app_data) -> None:
+    # global runningCheck
+
+    # print(sender, app_data)
+
+    # dpg.is_item_focused
+    if runningCheck:
+        return
+
+    if dpg.is_key_down(dpg.mvKey_R):
+        runCheck()
+
+    # if dpg.is_key_down(dpg.mvKey_O):
+    #     dpg.show_item("dialogOpenPath")
+
+
 def runCheck() -> None:
     global lastCheckResults
     # clear previously saved results
@@ -203,7 +220,7 @@ def runCheck() -> None:
             return
         print(
             " ".join((
-                "\n[WARNING] Provided path is a directory!",
+                "\n[WARNING] Provided path is a directory.",
                 "The application will try to find the suitable files",
                 "by guessing their type based on magic numbers.",
                 "This is not an absolutely reliable way,",
@@ -235,7 +252,7 @@ def runCheck() -> None:
     if not filesToCheck:
         dpg.set_value(
             "errorMessage",
-            "Did not found suitable files in the provided directory."
+            "Did not find suitable files in the provided directory."
         )
         dpg.show_item("errorMessage")
         showLoading(False)
@@ -245,13 +262,17 @@ def runCheck() -> None:
         for f in filesToCheck:
             print(f"- {f.as_posix()}")
 
+    # TODO: if len(filesToCheck) > 10, ask for a confirmation
+
     try:
         idx: int = 0
         cnt = len(filesToCheck)
         print()
         for f in filesToCheck:
             print(f"Checking file {idx+1}/{cnt}...")
-            checksum = sha1sum(f)
+            checksum = calculateSHAchecksum(f)
+            if debugMode:
+                print(f"[DEBUG] SHA checksum: {checksum}")
             file = vtClient.get_object(f"/files/{checksum}")
             fileScanResults = pandas.DataFrame(
                 {
@@ -268,9 +289,11 @@ def runCheck() -> None:
                     "Times submitted": str(file.times_submitted),
                     # "First time": str(file.first_submission_date),
                     "Last time": str(file.last_analysis_date),
+                    # TODO: results-based coloring
                     "H/U/S/F/M/U": parseAnalStats(
                         str(file.last_analysis_stats)
-                    )
+                    ),
+                    "Report": checksum
                 },
                 index=[idx]
             )
@@ -331,7 +354,10 @@ def runCheck() -> None:
             # scrollX=True
         ):
             dpg.add_table_column(label="#")
-            for header in (h for h in lastCheckResults.columns if h != "Path"):
+            for header in (
+                h for h in lastCheckResults.columns
+                if h not in ["Path"]
+            ):
                 dpg.add_table_column(
                     label=header,
                     tag=header.lower().replace(" ", "-")
@@ -355,7 +381,9 @@ def runCheck() -> None:
                         "U - undetected"
                     ))
                 )
-            for index, row in lastCheckResults.drop(columns="Path").iterrows():
+            for index, row in lastCheckResults.drop(
+                columns=["Path", "Report"]
+            ).iterrows():
                 # reveal_type(index)
                 index = typing.cast(int, index)
                 with dpg.table_row():
@@ -379,6 +407,14 @@ def runCheck() -> None:
                                         lastCheckResults.at[index, "Path"]
                                     )
                         cellIndex += 1
+                    with dpg.table_cell():
+                        add_hyperlink(
+                            "open",
+                            "/".join((
+                                vtReportBaseURL,
+                                lastCheckResults.at[index, "Report"]
+                            ))
+                        )
     except Exception as ex:
         errorMsg = "Couldn't generate the results table"
         print(f"[ERROR] {errorMsg}. {ex}", file=sys.stderr)
@@ -397,8 +433,8 @@ def runCheck() -> None:
 
 
 def saveResultsToFile(sender, app_data, user_data) -> None:
-    if debugMode:
-        print(f"[DEBUG] {app_data}")
+    # if debugMode:
+    #     print(f"[DEBUG] {app_data}")
     # this check might be redundant,
     # as dialog window apparently performs it on its own
     resultsFileDir: pathlib.Path = pathlib.Path(app_data["current_path"])
@@ -410,13 +446,22 @@ def saveResultsToFile(sender, app_data, user_data) -> None:
         return
     resultsFile: pathlib.Path = resultsFileDir / app_data["file_name"]
     try:
-        print("[NOT IMPLEMENTED] saving results to file")
+        errorMsg = "[NOT IMPLEMENTED] saving results to file"
+        print(errorMsg, file=sys.stderr)
+        dpg.set_value("errorMessage", f"{errorMsg}.")
+        dpg.show_item("errorMessage")
     except Exception as ex:
         print(
             f"[ERROR] Couldn't save results to {resultsFile}: {ex}",
             file=sys.stderr
         )
         return
+
+
+# def openPath(sender, app_data, user_data) -> None:
+#     # if debugMode:
+#     #     print(f"[DEBUG] {app_data}")
+#     dpg.set_value("input_pathToCheck", app_data["file_path_name"])
 
 
 def cellClicked(sender, app_data) -> None:
@@ -502,6 +547,20 @@ def main() -> None:
         callback=saveResultsToFile
     ):
         dpg.add_file_extension(".json", color=(30, 225, 0))
+    #
+    # --- open path dialog
+    #
+    # with dpg.file_dialog(
+    #     tag="dialogOpenPath",
+    #     directory_selector=enableDirScan,
+    #     width=800,
+    #     height=600,
+    #     modal=True,
+    #     show=False,
+    #     callback=openPath
+    # ):
+    #     if not enableDirScan:
+    #         dpg.add_file_extension(".*", color=(30, 225, 0))
     #
     # --- error dialog
     #
@@ -647,17 +706,17 @@ def main() -> None:
         #
         with dpg.menu_bar():
             with dpg.menu(label="File"):
+                # dpg.add_menu_item(
+                #     tag="menu_openPath",
+                #     label="Open path...",
+                #     shortcut="Cmd/Ctrl + O",
+                #     callback=lambda: dpg.show_item("dialogOpenPath")
+                # )
                 dpg.add_menu_item(
                     tag="menu_runCheck",
                     label="Check the path",
                     shortcut="Cmd/Ctrl + R",
                     callback=runCheck
-                )
-                dpg.add_spacer()
-                dpg.add_menu_item(
-                    tag="menu_getAPIquota",
-                    label="Get VirusTotal API quota",
-                    callback=showQuotaWindow
                 )
                 dpg.add_spacer()
                 dpg.add_separator()
@@ -725,6 +784,14 @@ def main() -> None:
                     label="About...",
                     callback=lambda: dpg.show_item("window_about")
                 )
+                dpg.add_spacer()
+                dpg.add_separator()
+                dpg.add_spacer()
+                dpg.add_menu_item(
+                    tag="menu_getAPIquota",
+                    label="Get VirusTotal API quota",
+                    callback=showQuotaWindow
+                )
         #
         # -- contents
         #
@@ -791,18 +858,18 @@ def main() -> None:
         dpg.add_item_clicked_handler(callback=cellClicked)
 
     # keyboard shortcuts
-    # with dpg.handler_registry():
-    #     # --- for the query text
-    #     # Mac OS | Control
-    #     dpg.add_key_press_handler(341, callback=keyPressCallback)
-    #     # Mac OS | left Command
-    #     dpg.add_key_press_handler(343, callback=keyPressCallback)
-    #     # Mac OS | right Command
-    #     dpg.add_key_press_handler(347, callback=keyPressCallback)
-    #     # Linux | right Ctrl?
-    #     dpg.add_key_press_handler(345, callback=keyPressCallback)
-    #     # Windows | left and right Ctrl
-    #     dpg.add_key_press_handler(17, callback=keyPressCallback)
+    with dpg.handler_registry():
+        # --- for the query text
+        # Mac OS | Control
+        dpg.add_key_press_handler(341, callback=keyPressCallback)
+        # Mac OS | left Command
+        dpg.add_key_press_handler(343, callback=keyPressCallback)
+        # Mac OS | right Command
+        dpg.add_key_press_handler(347, callback=keyPressCallback)
+        # Linux | right Ctrl?
+        dpg.add_key_press_handler(345, callback=keyPressCallback)
+        # Windows | left and right Ctrl
+        dpg.add_key_press_handler(17, callback=keyPressCallback)
 
     # ---
 
