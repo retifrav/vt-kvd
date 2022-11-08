@@ -1,5 +1,7 @@
 # vt-kvd
 
+![Кожно-венерологический диспансер, вывеска](https://raw.githubusercontent.com/retifrav/vt-kvd/master/misc/kvd.jpg "Кожно-венерологический диспансер")
+
 <!-- MarkdownTOC -->
 
 - [About](#about)
