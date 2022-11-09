@@ -1,8 +1,3 @@
-# dependencies
-import dearpygui.dearpygui as dpg
-from dearpygui.demo import show_demo
-import pandas
-import vt
 # standard libraries
 from time import sleep
 import argparse
@@ -12,6 +7,11 @@ import pathlib
 import webbrowser
 import typing
 from typing import Optional, List
+# dependencies
+import dearpygui.dearpygui as dpg
+from dearpygui.demo import show_demo
+import pandas
+import vt
 
 from . import applicationPath, settingsFile
 from .version import (

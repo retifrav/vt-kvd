@@ -3,6 +3,9 @@
     [
         {
             "path": ".",
+            "file_exclude_patterns": [
+                "src/vt_kvd/settings.ini"
+            ],
             "folder_exclude_patterns": [
                 ".mypy_cache",
                 "*.egg-info",
