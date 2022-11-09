@@ -24,11 +24,15 @@ try:  # from python-magic loader module, needed to modify lookup procedure
     for lib in magic_candidates():
         if lib is None:
             continue
-        try:
-            ctypes.CDLL(lib)
+        # try:
+        #     ctypes.CDLL(lib)
+        #     foundMagic = True
+        # except OSError:
+        #     pass
+        if pathlib.Path(lib).is_file():
+            # print(f"Found the following libmagic binary: {lib}")
             foundMagic = True
-        except OSError:
-            pass
+            break
     if not foundMagic:
         raise ImportError("Failed to find libmagic")
     else:
@@ -36,12 +40,11 @@ try:  # from python-magic loader module, needed to modify lookup procedure
 except Exception as ex:
     print(
         " ".join((
-            "[ERROR] Could not import magic module, you probably",
+            "[WARNING] Could not import magic module, you probably",
             "don't have libmagic binary installed in your system. Trying",
             "to use directories scanning functionality will likely",
             f"result in error. {ex}"
-        )),
-        file=sys.stderr
+        ))
     )
     # traceback.print_exc(file=sys.stderr)
 
