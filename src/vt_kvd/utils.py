@@ -10,10 +10,23 @@ from typing import Optional, List
 try:  # from python-magic loader module, needed to modify lookup procedure
     from ctypes.util import find_library
     import ctypes
+    # import site
+    import sysconfig
 
     def magic_candidates():
         yield find_library("magic")
         if sys.platform == "win32":  # might need other platforms too
+            # if user has python-magic-bin, then libmagic should be
+            # in one of the site-packages
+            sysPaths = sysconfig.get_paths()  # site.getsitepackages()
+            sitePackages = [
+                sysPaths["purelib"],
+                sysPaths["platlib"]
+            ]
+            for p in sitePackages:
+                dirCandidate = pathlib.Path(p) / "magic" / "libmagic"
+                if dirCandidate.is_dir():
+                    yield dirCandidate / "libmagic.dll"
             # excluded "msys-magic-1", because it can be picked up
             # from /path/to/git/usr/bin/msys-magic-1.dll and fail
             for i in ["libmagic", "magic1", "cygmagic-1", "libmagic-1"]:
