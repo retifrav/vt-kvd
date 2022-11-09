@@ -26,6 +26,15 @@
 
 A VirusTotal GUI client.
 
+![vt-kvd application window](https://raw.githubusercontent.com/retifrav/vt-kvd/master/misc/screenshot-main-macos.png "vt-kvd")
+
+The application functionality is rather basic at the moment:
+
+- getting files hashes and fetching existing reports from VirusTotal
+    + displaying results in a table
+    + openning a link to the full report
+- uploading files for scanning <u>isn't implemented</u>
+
 ## Installing
 
 ### vt-kvd itself
@@ -109,12 +118,12 @@ Scanning directories is disabled by default. If you would like to enable it, lau
 Tested on:
 
 - Mac OS:
-    + ?, Intel
-    + ?, Apple silicon
+    + 12.6.1, Intel
 - Windows:
-    + 11
+    + 10 21H1
+    + 11 21H2
 - GNU/Linux:
-    + ?
+    + Ubuntu 22.04
 
 ## 3rd-party
 
