@@ -1,15 +1,3 @@
-# dependencies
-try:
-    import magic
-except ImportError:
-    print(
-        " ".join((
-            "[WARNING] Could not import magic module, you probably",
-            "don't have libmagic binary installed in your system. Trying",
-            "to use directories scanning functionality will likely",
-            "result in error"
-        ))
-    )
 # standard libraries
 import sys
 import traceback
@@ -17,8 +5,45 @@ import json
 import hashlib
 import pathlib
 import configparser
-#
 from typing import Optional, List
+# dependencies
+try:  # from python-magic loader module, needed to modify lookup procedure
+    from ctypes.util import find_library
+    import ctypes
+
+    def magic_candidates():
+        yield find_library("magic")
+        if sys.platform == "win32":  # might need other platforms too
+            # excluded "msys-magic-1", because it can be picked up
+            # from /path/to/git/usr/bin/msys-magic-1.dll and fail
+            for i in ["libmagic", "magic1", "cygmagic-1", "libmagic-1"]:
+                yield "./%s.dll" % (i,)
+                yield find_library(i)
+
+    foundMagic = False
+    for lib in magic_candidates():
+        if lib is None:
+            continue
+        try:
+            ctypes.CDLL(lib)
+            foundMagic = True
+        except OSError:
+            pass
+    if not foundMagic:
+        raise ImportError("Failed to find libmagic")
+    else:
+        import magic
+except Exception as ex:
+    print(
+        " ".join((
+            "[ERROR] Could not import magic module, you probably",
+            "don't have libmagic binary installed in your system. Trying",
+            "to use directories scanning functionality will likely",
+            f"result in error. {ex}"
+        )),
+        file=sys.stderr
+    )
+    # traceback.print_exc(file=sys.stderr)
 
 mimeTypesToCheck: List[str] = [
     "application/x-archive",  # [ Windows | *.lib], [ Linux | *.a ]
