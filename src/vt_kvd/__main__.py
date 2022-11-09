@@ -24,7 +24,7 @@ from .theme import (
     getGlobalTheme,
     getErrorTheme,
     getWindowTheme,
-    getCellHighlightedTheme,
+    getHighlightedTheme,
     getCellDefaultTheme,
     getHyperlinkTheme,
     styleHorizontalPadding,
@@ -34,7 +34,7 @@ from .utils import (
     getVirusTotalAPIkeyFromConfig,
     calculateSHAchecksum,
     findFilesToCheck,
-    parseAnalStats
+    estimateDangerLevel
 )
 
 debugMode: bool = False
@@ -227,8 +227,8 @@ def runCheck() -> None:
                 "so it is recommended that you check the files",
                 "of interest individually by explicitly providing",
                 "their full paths one by one. Another thing to consider",
-                "is that VirusTotal API has a limitation of 500 requests",
-                "per day for standard free public accounts, so you can",
+                "is that VirusTotal API has a quota for requests",
+                "per day on standard free public accounts, so you can",
                 "quickly exceed that amount by scanning directories",
                 "instead of individual files"
             ))
@@ -286,13 +286,19 @@ def runCheck() -> None:
                         str(file.type_tag),
                         str(file.type_description)
                     )),
-                    "Times submitted": str(file.times_submitted),
+                    "Count": str(file.times_submitted),
                     # "First time": str(file.first_submission_date),
                     "Last time": str(file.last_analysis_date),
                     # TODO: results-based coloring
-                    "H/U/S/F/M/U": parseAnalStats(
-                        str(file.last_analysis_stats)
-                    ),
+                    "H/U/S/F/M/U": "/".join((
+                        str(file.last_analysis_stats["harmless"]),
+                        str(file.last_analysis_stats["type-unsupported"]),
+                        str(file.last_analysis_stats["suspicious"]),
+                        str(file.last_analysis_stats["failure"]),
+                        str(file.last_analysis_stats["malicious"]),
+                        str(file.last_analysis_stats["undetected"])
+                    )),
+                    "Danger": estimateDangerLevel(file.last_analysis_stats),
                     "Report": checksum
                 },
                 index=[idx]
@@ -346,6 +352,7 @@ def runCheck() -> None:
             borders_innerH=True,
             borders_outerV=True,
             clipper=True
+            # no_host_extendX=True,
             # row_background=True,
             # freeze_rows=0,
             # freeze_columns=1,
@@ -353,14 +360,18 @@ def runCheck() -> None:
             # policy=dpg.mvTable_SizingFixedFit,
             # scrollX=True
         ):
-            dpg.add_table_column(label="#")
+            dpg.add_table_column(label="#", init_width_or_weight=0.1)
             for header in (
                 h for h in lastCheckResults.columns
-                if h not in ["Path"]
+                if h not in ["Path", "Danger"]
             ):
                 dpg.add_table_column(
                     label=header,
-                    tag=header.lower().replace(" ", "-")
+                    tag=header.lower().replace(" ", "-"),
+                    init_width_or_weight=(
+                        0.3 if header in ["Count", "Report"]
+                        else 1.0
+                    )
                 )
             with dpg.tooltip("name"):
                 dpg.add_text(
@@ -368,6 +379,13 @@ def runCheck() -> None:
                         "(*) means that VirusTotal has no",
                         "`meaningful_name` property for this file,",
                         "and so local file name is used instead"
+                    ))
+                )
+            with dpg.tooltip("count"):
+                dpg.add_text(
+                    "\n".join((
+                        "How many times this file has been",
+                        "submitted for checking"
                     ))
                 )
             with dpg.tooltip("h/u/s/f/m/u"):
@@ -382,7 +400,7 @@ def runCheck() -> None:
                     ))
                 )
             for index, row in lastCheckResults.drop(
-                columns=["Path", "Report"]
+                columns=["Path", "Danger", "Report"]
             ).iterrows():
                 # reveal_type(index)
                 index = typing.cast(int, index)
@@ -401,10 +419,21 @@ def runCheck() -> None:
                                 cellID,
                                 "cell-handler"
                             )
-                            if cellIndex == 1:
+                            if cellIndex == 1:  # number
                                 with dpg.tooltip(cellID):
                                     dpg.add_text(
                                         lastCheckResults.at[index, "Path"]
+                                    )
+                            if cellIndex == 5:  # analysis stats
+                                if lastCheckResults.at[index, "Danger"] == 2:
+                                    dpg.bind_item_theme(
+                                        cellID,
+                                        getErrorTheme()
+                                    )
+                                elif lastCheckResults.at[index, "Danger"] == 1:
+                                    dpg.bind_item_theme(
+                                        cellID,
+                                        getHighlightedTheme()
                                     )
                         cellIndex += 1
                     with dpg.table_cell():
@@ -473,9 +502,10 @@ def cellClicked(sender, app_data) -> None:
         # print(cellValue)
         dpg.set_clipboard_text(cellValue)
         dpg.set_value(app_data[1], "[copied]")
-        dpg.bind_item_theme(app_data[1], getCellHighlightedTheme())
+        itemTheme = dpg.get_item_theme(app_data[1])
+        dpg.bind_item_theme(app_data[1], getHighlightedTheme())
         sleep(1)
-        dpg.bind_item_theme(app_data[1], getCellDefaultTheme())
+        dpg.bind_item_theme(app_data[1], itemTheme)  # getCellDefaultTheme()
         dpg.set_value(app_data[1], cellValue)
 
 

@@ -166,15 +166,15 @@ def getErrorTheme():
         return errorTheme
 
 
-def getCellHighlightedTheme():
-    with dpg.theme() as cellHighlightedTheme:
+def getHighlightedTheme():
+    with dpg.theme() as highlightedTheme:
         with dpg.theme_component(dpg.mvAll):
             dpg.add_theme_color(
                 dpg.mvThemeCol_Text,
                 (255, 255, 0),
                 category=dpg.mvThemeCat_Core
             )
-        return cellHighlightedTheme
+        return highlightedTheme
 
 
 def getCellDefaultTheme():
@@ -189,14 +189,14 @@ def getCellDefaultTheme():
 
 
 def getWindowTheme():
-    with dpg.theme() as aboutTheme:
+    with dpg.theme() as windowTheme:
         with dpg.theme_component(dpg.mvAll):
             dpg.add_theme_style(
                 dpg.mvStyleVar_WindowPadding,
                 styleHorizontalPadding, 4,
                 category=dpg.mvThemeCat_Core
             )
-        return aboutTheme
+        return windowTheme
 
 
 def getHyperlinkTheme():

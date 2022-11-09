@@ -42,7 +42,7 @@ The application functionality is rather basic at the moment:
 #### From PyPI
 
 ``` sh
-$ pip install ?
+$ pip install vt-kvd
 ```
 
 #### From sources
@@ -57,7 +57,7 @@ or:
 ``` sh
 $ cd /path/to/repository/
 $ python -m build
-$ pip install ./dist/vt_kvd-0.1.0-py3-none-any.whl
+$ pip install ./dist/vt_kvd-0.4.0-py3-none-any.whl
 ```
 
 ### Dependencies

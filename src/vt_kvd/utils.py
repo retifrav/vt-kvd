@@ -5,7 +5,7 @@ import json
 import hashlib
 import pathlib
 import configparser
-from typing import Optional, List
+from typing import Optional, List, Dict
 # dependencies
 try:  # from python-magic loader module, needed to modify lookup procedure
     from ctypes.util import find_library
@@ -155,14 +155,10 @@ def findFilesToCheck(
     return filesToCheck
 
 
-def parseAnalStats(analStats: str) -> str:
-    stats = json.loads(analStats.replace("'", "\""))
-    # print(json.dumps(stats, indent=4))
-    return "/".join((
-        str(stats["harmless"]),
-        str(stats["type-unsupported"]),
-        str(stats["suspicious"]),
-        str(stats["failure"]),
-        str(stats["malicious"]),
-        str(stats["undetected"])
-    ))
+def estimateDangerLevel(analStats: Dict[str, int]) -> int:
+    if analStats["malicious"] != 0:
+        return 2
+    elif analStats["suspicious"] != 0:
+        return 1
+    else:
+        return 0
