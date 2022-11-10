@@ -262,7 +262,7 @@ def runCheck() -> None:
         for f in filesToCheck:
             print(f"- {f.as_posix()}")
 
-    # TODO: if len(filesToCheck) > 10, ask for a confirmation
+    # TODO: if len(filesToCheck) > 10, ask for a confirmation somehow
 
     try:
         idx: int = 0
@@ -282,14 +282,17 @@ def runCheck() -> None:
                         else f"{f.name}(*)"
                     ),
                     "Path": f.as_posix(),
-                    "Type": "/".join((
-                        str(file.type_tag),
-                        str(file.type_description)
-                    )),
+                    "Type": (
+                        " / ".join((
+                            str(file.type_tag),
+                            str(file.type_description)
+                        ))
+                        if file.get("type_tag")
+                        else file.type_description
+                    ),
                     "Count": str(file.times_submitted),
                     # "First time": str(file.first_submission_date),
                     "Last time": str(file.last_analysis_date),
-                    # TODO: results-based coloring
                     "H/U/S/F/M/U": "/".join((
                         str(file.last_analysis_stats["harmless"]),
                         str(file.last_analysis_stats["type-unsupported"]),
@@ -925,7 +928,7 @@ def main() -> None:
         vtAPIkey = "MISSING-VIRUSTOTAL-API-KEY"
         errorMsg = "Could not find/read a config with VirusTotal API key"
         print(f"[WARNING] {errorMsg}")
-        dpg.set_value("errorMessage", errorMsg)
+        dpg.set_value("errorMessage", f"{errorMsg}.")
         dpg.show_item("errorMessage")
     else:
         if debugMode:
