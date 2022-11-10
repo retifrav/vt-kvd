@@ -911,9 +911,9 @@ def main() -> None:
         width=1200,
         height=800,
         min_width=windowMinWidth,
-        min_height=600
-        # small_icon=str(applicationPath/"icons/planet-128.ico"),
-        # large_icon=str(applicationPath/"icons/planet-256.ico")
+        min_height=600,
+        small_icon=str(applicationPath/"icons/kvd-128.ico"),
+        large_icon=str(applicationPath/"icons/kvd-256.ico")
     )
 
     dpg.setup_dearpygui()
