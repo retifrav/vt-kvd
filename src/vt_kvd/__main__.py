@@ -581,33 +581,6 @@ def runCheck() -> None:
 
     showLoading(False)
     dpg.show_item("resultsGroup")
-    dpg.configure_item("menuSaveFile", enabled=True)
-
-
-def saveResultsToFile(sender, app_data, user_data) -> None:
-    # if debugMode:
-    #     print(f"[DEBUG] {app_data}")
-    # this check might be redundant,
-    # as dialog window apparently performs it on its own
-    resultsFileDir: pathlib.Path = pathlib.Path(app_data["current_path"])
-    if not resultsFileDir.is_dir():
-        print(
-            f"[ERROR] The {resultsFileDir} directory does not exist",
-            file=sys.stderr
-        )
-        return
-    resultsFile: pathlib.Path = resultsFileDir / app_data["file_name"]
-    try:
-        errorMsg = "[NOT IMPLEMENTED] saving results to file"
-        print(errorMsg, file=sys.stderr)
-        dpg.set_value("errorMessage", f"{errorMsg}.")
-        dpg.show_item("errorMessage")
-    except Exception as ex:
-        print(
-            f"[ERROR] Couldn't save results to {resultsFile}: {ex}",
-            file=sys.stderr
-        )
-        return
 
 
 # def openPath(sender, app_data, user_data) -> None:
@@ -687,19 +660,6 @@ def main() -> None:
     # dpg.set_viewport_resize_callback(callback=updateGeometry)
     dpg.set_exit_callback(callback=applicationClosing)
 
-    #
-    # --- save file dialog
-    #
-    with dpg.file_dialog(
-        id="dialogSaveFile",
-        directory_selector=False,
-        width=800,
-        height=600,
-        modal=True,
-        show=False,
-        callback=saveResultsToFile
-    ):
-        dpg.add_file_extension(".json", color=(30, 225, 0))
     #
     # --- open path dialog
     #
@@ -870,15 +830,6 @@ def main() -> None:
                     label="Check the path",
                     shortcut="Cmd/Ctrl + R",
                     callback=discoverFilesToCheck
-                )
-                dpg.add_spacer()
-                dpg.add_separator()
-                dpg.add_spacer()
-                dpg.add_menu_item(
-                    tag="menuSaveFile",
-                    label="Save results to file...",
-                    enabled=False,
-                    callback=lambda: dpg.show_item("dialogSaveFile")
                 )
                 dpg.add_spacer()
                 dpg.add_separator()
