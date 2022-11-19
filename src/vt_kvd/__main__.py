@@ -57,8 +57,10 @@ dpgColumnsMax: int = 64
 
 windowMinWidth: int = 900
 
+filesToCheck: List[pathlib.Path] = []
 lastCheckResults: pandas.DataFrame = pandas.DataFrame()
 runningCheck: bool = False
+filesLimit: int = 22
 
 
 def applicationClosing():
@@ -79,18 +81,19 @@ def showDPGabout() -> None:
     dpg.show_about()
 
 
-def showLoading(isLoading: bool) -> None:
+def showLoading(isLoading: bool, dontShowButton: bool = False) -> None:
     global runningCheck
 
     if isLoading:
-        dpg.hide_item("btn_runCheck")
+        dpg.hide_item("btn_discoverFiles")
         dpg.configure_item("menu_runCheck", enabled=False)
         dpg.show_item("loadingAnimation")
         runningCheck = True
     else:
         dpg.hide_item("loadingAnimation")
-        dpg.show_item("btn_runCheck")
-        dpg.configure_item("menu_runCheck", enabled=True)
+        if not dontShowButton:
+            dpg.show_item("btn_discoverFiles")
+            dpg.configure_item("menu_runCheck", enabled=True)
         runningCheck = False
 
 
@@ -155,24 +158,38 @@ def keyPressCallback(sender, app_data) -> None:
         return
 
     if dpg.is_key_down(dpg.mvKey_R):
-        runCheck()
+        discoverFilesToCheck()
 
     # if dpg.is_key_down(dpg.mvKey_O):
     #     dpg.show_item("dialogOpenPath")
 
 
-def runCheck() -> None:
-    global lastCheckResults
-    # clear previously saved results
-    lastCheckResults = pandas.DataFrame()
+def cancelCheck() -> None:
+    dpg.hide_item("discoveredFilesGroup")
+    if dpg.does_item_exist("discoveredFilesTable"):
+        dpg.delete_item("discoveredFilesTable")
+    showLoading(False)
+    dpg.show_item("input_pathToCheck")
+
+
+def discoverFilesToCheck() -> None:
+    global filesToCheck
+
+    filesToCheck = []
 
     dpg.hide_item("resultsGroup")
     if dpg.does_item_exist("resultsTable"):
         dpg.delete_item("resultsTable")
+
+    dpg.hide_item("discoveredFilesGroup")
+    dpg.hide_item("tooManyFilesWarning")
+    dpg.set_value("discoveredFilesCount", "0")
+    if dpg.does_item_exist("discoveredFilesTable"):
+        dpg.delete_item("discoveredFilesTable")
+
     dpg.hide_item("errorMessage")
     dpg.set_value("errorMessage", "")
 
-    dpg.configure_item("menuSaveFile", enabled=False)
     showLoading(True)
 
     pathToCheckStr: str = dpg.get_value("input_pathToCheck").strip()
@@ -202,7 +219,7 @@ def runCheck() -> None:
         dpg.show_item("errorMessage")
         showLoading(False)
         return
-    filesToCheck: List[pathlib.Path] = []
+
     if pathToCheck.is_dir():
         if not enableDirScan:
             dpg.set_value(
@@ -218,21 +235,22 @@ def runCheck() -> None:
             dpg.show_item("errorMessage")
             showLoading(False)
             return
-        print(
-            " ".join((
-                "\n[WARNING] Provided path is a directory.",
-                "The application will try to find the suitable files",
-                "by guessing their type based on magic numbers.",
-                "This is not an absolutely reliable way,",
-                "so it is recommended that you check the files",
-                "of interest individually by explicitly providing",
-                "their full paths one by one. Another thing to consider",
-                "is that VirusTotal API has a quota for requests",
-                "per day on standard free public accounts, so you can",
-                "quickly exceed that amount by scanning directories",
-                "instead of individual files"
-            ))
-        )
+        if debugMode:
+            print(
+                " ".join((
+                    "\n[WARNING] Provided path is a directory.",
+                    "The application will try to find the suitable files",
+                    "by guessing their type based on magic numbers.",
+                    "This is not an absolutely reliable way,",
+                    "so it is recommended that you check the files",
+                    "of interest individually by explicitly providing",
+                    "their full paths one by one. Another thing to consider",
+                    "is that VirusTotal API has a quota for requests",
+                    "per day on standard free public accounts, so you can",
+                    "quickly exceed that amount by scanning directories",
+                    "instead of individual files"
+                ))
+            )
         try:
             filesToCheck = findFilesToCheck(pathToCheck, debugMode)
         except Exception as ex:
@@ -262,7 +280,76 @@ def runCheck() -> None:
         for f in filesToCheck:
             print(f"- {f.as_posix()}")
 
-    # TODO: if len(filesToCheck) > 10, ask for a confirmation somehow
+    if len(filesToCheck) == 1:
+        showLoading(False, True)
+        runCheck()
+    else:
+        if len(filesToCheck) > filesLimit:
+            dpg.show_item("tooManyFilesWarning")
+        try:
+            with dpg.table(
+                parent="discoveredFilesGroup",
+                tag="discoveredFilesTable",
+                header_row=True,
+                resizable=True,
+                borders_outerH=True,
+                borders_innerV=True,
+                borders_innerH=True,
+                borders_outerV=True,
+                clipper=True
+                # no_host_extendX=True,
+                # row_background=True,
+                # freeze_rows=0,
+                # freeze_columns=1,
+                # scrollY=True,
+                # policy=dpg.mvTable_SizingFixedFit,
+                # scrollX=True
+            ):
+                dpg.add_table_column(label="#", init_width_or_weight=0.05)
+                dpg.add_table_column(
+                    label="File",
+                    tag="file",
+                    init_width_or_weight=0.95
+                )
+                index = 0
+                for f in filesToCheck:
+                    with dpg.table_row():
+                        with dpg.table_cell():
+                            dpg.add_text(default_value=f"{index+1}")
+                        with dpg.table_cell():
+                            dpg.add_text(
+                                default_value=f.as_posix()
+                            )
+                    index += 1
+        except Exception as ex:
+            errorMsg = "Couldn't generate the files list"
+            print(f"[ERROR] {errorMsg}. {ex}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            dpg.set_value(
+                "errorMessage",
+                f"{errorMsg}. There might be more details in console/stderr."
+            )
+            dpg.show_item("errorMessage")
+            showLoading(False)
+            return
+
+        showLoading(False, True)
+        dpg.hide_item("input_pathToCheck")
+        dpg.set_value("discoveredFilesCount", len(filesToCheck))
+        dpg.show_item("discoveredFilesGroup")
+
+
+def runCheck() -> None:
+    global lastCheckResults
+    # clear previously saved results
+    lastCheckResults = pandas.DataFrame()
+
+    dpg.hide_item("discoveredFilesGroup")
+    dpg.show_item("input_pathToCheck")
+
+    showLoading(True)
+
+    # TODO: report checking progress to the user ("Checking file 1/26...")
 
     try:
         idx: int = 0
@@ -273,63 +360,78 @@ def runCheck() -> None:
             checksum = calculateSHAchecksum(f)
             if debugMode:
                 print(f"[DEBUG] SHA checksum: {checksum}")
-            file = vtClient.get_object(f"/files/{checksum}")
-            fileScanResults = pandas.DataFrame(
-                {
-                    "Name": (
-                        str(file.meaningful_name)
-                        if file.get("meaningful_name")
-                        else f"{f.name}(*)"
-                    ),
-                    "Path": f.as_posix(),
-                    "Type": (
-                        " / ".join((
-                            str(file.type_tag),
-                            str(file.type_description)
-                        ))
-                        if file.get("type_tag")
-                        else file.type_description
-                    ),
-                    "Count": str(file.times_submitted),
-                    # "First time": str(file.first_submission_date),
-                    "Last time": str(file.last_analysis_date),
-                    "H/U/S/F/M/U": "/".join((
-                        str(file.last_analysis_stats["harmless"]),
-                        str(file.last_analysis_stats["type-unsupported"]),
-                        str(file.last_analysis_stats["suspicious"]),
-                        str(file.last_analysis_stats["failure"]),
-                        str(file.last_analysis_stats["malicious"]),
-                        str(file.last_analysis_stats["undetected"])
-                    )),
-                    "Danger": estimateDangerLevel(file.last_analysis_stats),
-                    "Report": checksum
-                },
-                index=[idx]
-            )
-            lastCheckResults = pandas.concat(
-                [lastCheckResults, fileScanResults]
-            )
+            file = None
+            try:
+                file = vtClient.get_object(f"/files/{checksum}")
+            except vt.error.APIError as ex:
+                if ex.code == "NotFoundError":
+                    fileScanResults = pandas.DataFrame(
+                        {
+                            "Name": f"{f.name}(*)",
+                            "Path": f.as_posix(),
+                            "Type": "-",
+                            "Count": "-",
+                            "Last time": "-",
+                            "H/U/S/F/M/U": "-",
+                            "Danger": "-",
+                            "Report": "-"
+                        },
+                        index=[idx]
+                    )
+                    lastCheckResults = pandas.concat(
+                        [lastCheckResults, fileScanResults]
+                    )
+                else:
+                    errorMsg = " ".join((
+                        "Unknown error returned from VirusTotal API.",
+                        "There might be more details in console/stderr"
+                    ))
+                    if ex.code == "WrongCredentialsError":
+                        errorMsg = "Invalid or expired VirusTotal API key"
+                    elif ex.code == "QuotaExceededError":
+                        errorMsg = "You've exceeded your VirusTotal API quota"
+                    print(f"[ERROR] {errorMsg}. {ex}", file=sys.stderr)
+                    dpg.set_value("errorMessage", f"{errorMsg}.")
+                    dpg.show_item("errorMessage")
+                    showLoading(False)
+                    return
+            if file is not None:
+                fileScanResults = pandas.DataFrame(
+                    {
+                        "Name": (
+                            str(file.meaningful_name)
+                            if file.get("meaningful_name")
+                            else f"{f.name}(*)"
+                        ),
+                        "Path": f.as_posix(),
+                        "Type": (
+                            " / ".join((
+                                str(file.type_tag),
+                                str(file.type_description)
+                            ))
+                            if file.get("type_tag")
+                            else file.type_description
+                        ),
+                        "Count": str(file.times_submitted),
+                        # "First time": str(file.first_submission_date),
+                        "Last time": str(file.last_analysis_date),
+                        "H/U/S/F/M/U": "/".join((
+                            str(file.last_analysis_stats["harmless"]),
+                            str(file.last_analysis_stats["type-unsupported"]),
+                            str(file.last_analysis_stats["suspicious"]),
+                            str(file.last_analysis_stats["failure"]),
+                            str(file.last_analysis_stats["malicious"]),
+                            str(file.last_analysis_stats["undetected"])
+                        )),
+                        "Danger": estimateDangerLevel(file.last_analysis_stats),
+                        "Report": checksum
+                    },
+                    index=[idx]
+                )
+                lastCheckResults = pandas.concat(
+                    [lastCheckResults, fileScanResults]
+                )
             idx += 1
-    except vt.error.APIError as ex:
-        errorMsg = " ".join((
-            "Unknown error returned from VirusTotal API.",
-            "There might be more details in console/stderr"
-        ))
-        if ex.code == "NotFoundError":
-            errorMsg = " ".join((
-                "This file hasn't been scanned at VirusTotal yet,",
-                "so you might want to be the first one to do that",
-                "and upload it for scanning"
-            ))
-        elif ex.code == "WrongCredentialsError":
-            errorMsg = "Invalid, expired or revoked VirusTotal API key"
-        elif ex.code == "QuotaExceededError":
-            errorMsg = "You've exceeded your VirusTotal API quota"
-        print(f"[ERROR] {errorMsg}. {ex}", file=sys.stderr)
-        dpg.set_value("errorMessage", f"{errorMsg}.")
-        dpg.show_item("errorMessage")
-        showLoading(False)
-        return
     except Exception as ex:
         errorMsg = "Couldn't check that path"
         print(f"[ERROR] {errorMsg}. {ex}", file=sys.stderr)
@@ -382,7 +484,8 @@ def runCheck() -> None:
                         "(*) means that VirusTotal has no",
                         "`meaningful_name` property for this file,",
                         "and so local file name is used instead"
-                    ))
+                    )),
+                    wrap=windowMinWidth-50
                 )
             with dpg.tooltip("count"):
                 dpg.add_text(
@@ -440,13 +543,30 @@ def runCheck() -> None:
                                     )
                         cellIndex += 1
                     with dpg.table_cell():
-                        add_hyperlink(
-                            "open",
-                            "/".join((
-                                vtReportBaseURL,
-                                lastCheckResults.at[index, "Report"]
-                            ))
-                        )
+                        if lastCheckResults.at[index, "Report"] != "-":
+                            add_hyperlink(
+                                "open",
+                                "/".join((
+                                    vtReportBaseURL,
+                                    lastCheckResults.at[index, "Report"]
+                                ))
+                            )
+                        else:
+                            reportCell = dpg.add_text(default_value="- no -")
+                            with dpg.tooltip(reportCell):
+                                dpg.add_text(
+                                    " ".join((
+                                        "This file hasn't been scanned",
+                                        "at VirusTotal yet, so you might want",
+                                        "to be the first one to do that",
+                                        "and upload it for scanning"
+                                    )),
+                                    wrap=windowMinWidth-50
+                                )
+                            dpg.bind_item_theme(
+                                reportCell,
+                                getHighlightedTheme()
+                            )
     except Exception as ex:
         errorMsg = "Couldn't generate the results table"
         print(f"[ERROR] {errorMsg}. {ex}", file=sys.stderr)
@@ -749,7 +869,7 @@ def main() -> None:
                     tag="menu_runCheck",
                     label="Check the path",
                     shortcut="Cmd/Ctrl + R",
-                    callback=runCheck
+                    callback=discoverFilesToCheck
                 )
                 dpg.add_spacer()
                 dpg.add_separator()
@@ -848,10 +968,11 @@ def main() -> None:
         #     multiline=True,
         #     tab_input=True
         # )
+
         dpg.add_button(
-            tag="btn_runCheck",
-            label="Check that",
-            callback=runCheck
+            tag="btn_discoverFiles",
+            label="Check that path",
+            callback=discoverFilesToCheck
         )
         dpg.add_loading_indicator(
             tag="loadingAnimation",
@@ -861,8 +982,6 @@ def main() -> None:
             show=False
         )
 
-        dpg.add_spacer()
-
         dpg.add_text(
             tag="errorMessage",
             default_value="Error",
@@ -870,6 +989,38 @@ def main() -> None:
             wrap=windowMinWidth-50,
             show=False
         )
+
+        with dpg.group(tag="discoveredFilesGroup", show=False):
+            with dpg.group(tag="tooManyFilesWarning", show=False):
+                # TODO: remove top padding, the text (or group?)
+                # looks padded from top, like there is a spacer
+                dpg.add_text(
+                    default_value=" ".join((
+                        "Discovered too many files to be checked (more than",
+                        f"{filesLimit}). Think carefully if you really want",
+                        "to proceed, because you can exceed your daily",
+                        "VirusTotal API quota. Perhaps you should",
+                        "scan a folder with fewer files instead."
+                    )),
+                    wrap=windowMinWidth-50
+                )
+                dpg.add_spacer()
+            with dpg.group(horizontal=True):
+                dpg.add_button(
+                    tag="btn_runCheck",
+                    label="Check discovered files",
+                    callback=runCheck
+                )
+                dpg.add_button(
+                    tag="btn_cancelCheck",
+                    label="Cancel",
+                    callback=cancelCheck
+                )
+            with dpg.group(horizontal=True):
+                dpg.add_text(default_value="Total files discovered:")
+                dpg.add_text(tag="discoveredFilesCount", default_value="0")
+            with dpg.table(tag="discoveredFilesTable"):
+                dpg.add_table_column(label="Files")
 
         with dpg.group(tag="resultsGroup", show=False):
             dpg.add_text(default_value="Results:")
@@ -883,6 +1034,7 @@ def main() -> None:
     dpg.bind_item_theme("errorMessageQuotas", getErrorTheme())
     dpg.bind_item_theme("window_about", getWindowTheme())
     dpg.bind_item_theme("window_apiQuota", getWindowTheme())
+    dpg.bind_item_theme("tooManyFilesWarning", getHighlightedTheme())
     # dpg.bind_item_theme("errorDialog", getWindowTheme())
     # dpg.bind_item_theme("errorDialogText", getErrorTheme())
 
