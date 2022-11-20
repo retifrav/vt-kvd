@@ -20,6 +20,8 @@ from .version import (
     __platform__
 )
 from .theme import (
+    stylePrimaryColor,
+    stylePrimaryColorActive,
     getGlobalFont,
     getGlobalTheme,
     getErrorTheme,
@@ -348,15 +350,16 @@ def runCheck() -> None:
     dpg.show_item("input_pathToCheck")
 
     showLoading(True)
-
-    # TODO: report checking progress to the user ("Checking file 1/26...")
+    dpg.set_value("loadingProgress", "checking files...")
+    dpg.show_item("loadingProgress")
 
     try:
         idx: int = 0
-        cnt = len(filesToCheck)
+        cnt: int = len(filesToCheck)
         print()
         for f in filesToCheck:
             print(f"Checking file {idx+1}/{cnt}...")
+            dpg.set_value("loadingProgress", f"checking {idx+1}/{cnt}...")
             checksum = calculateSHAchecksum(f)
             if debugMode:
                 print(f"[DEBUG] SHA checksum: {checksum}")
@@ -393,6 +396,7 @@ def runCheck() -> None:
                     print(f"[ERROR] {errorMsg}. {ex}", file=sys.stderr)
                     dpg.set_value("errorMessage", f"{errorMsg}.")
                     dpg.show_item("errorMessage")
+                    dpg.hide_item("loadingProgress")
                     showLoading(False)
                     return
             if file is not None:
@@ -423,7 +427,9 @@ def runCheck() -> None:
                             str(file.last_analysis_stats["malicious"]),
                             str(file.last_analysis_stats["undetected"])
                         )),
-                        "Danger": estimateDangerLevel(file.last_analysis_stats),
+                        "Danger": estimateDangerLevel(
+                            file.last_analysis_stats
+                        ),
                         "Report": checksum
                     },
                     index=[idx]
@@ -442,6 +448,7 @@ def runCheck() -> None:
             f"{errorMsg}. There might be more details in console/stderr."
         )
         dpg.show_item("errorMessage")
+        dpg.hide_item("loadingProgress")
         showLoading(False)
         return
 
@@ -576,9 +583,11 @@ def runCheck() -> None:
             f"{errorMsg}. There might be more details in console/stderr."
         )
         dpg.show_item("errorMessage")
+        dpg.hide_item("loadingProgress")
         showLoading(False)
         return
 
+    dpg.hide_item("loadingProgress")
     showLoading(False)
     dpg.show_item("resultsGroup")
 
@@ -798,9 +807,12 @@ def main() -> None:
         )
         dpg.add_loading_indicator(
             tag="loadingAnimationQuotas",
-            radius=2,
-            speed=3,
-            indent=10,
+            style=1,
+            radius=1.5,
+            # speed=2,
+            indent=7,
+            color=stylePrimaryColorActive,
+            secondary_color=stylePrimaryColor,
             show=False
         )
         dpg.add_text(
@@ -885,16 +897,16 @@ def main() -> None:
 
             with dpg.menu(label="Help"):
                 dpg.add_menu_item(
-                    label="About...",
-                    callback=lambda: dpg.show_item("window_about")
+                    tag="menu_getAPIquota",
+                    label="Get VirusTotal API quota",
+                    callback=showQuotaWindow
                 )
                 dpg.add_spacer()
                 dpg.add_separator()
                 dpg.add_spacer()
                 dpg.add_menu_item(
-                    tag="menu_getAPIquota",
-                    label="Get VirusTotal API quota",
-                    callback=showQuotaWindow
+                    label="About...",
+                    callback=lambda: dpg.show_item("window_about")
                 )
         #
         # -- contents
@@ -925,13 +937,23 @@ def main() -> None:
             label="Check that path",
             callback=discoverFilesToCheck
         )
-        dpg.add_loading_indicator(
-            tag="loadingAnimation",
-            radius=2,
-            speed=3,
-            indent=10,
-            show=False
-        )
+        with dpg.group(horizontal=True):
+            dpg.add_loading_indicator(
+                tag="loadingAnimation",
+                style=1,
+                radius=1.5,
+                # speed=2,
+                indent=7,
+                color=stylePrimaryColorActive,
+                secondary_color=stylePrimaryColor,
+                show=False
+            )
+            dpg.add_spacer()
+            dpg.add_text(
+                tag="loadingProgress",
+                default_value="checking files...",
+                show=False
+            )
 
         dpg.add_text(
             tag="errorMessage",
