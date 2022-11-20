@@ -14,13 +14,13 @@
 
 Released on `2022-11-20`.
 
-- displaying checking progress in the GUI
 - previewing the list of files discovered while scanning the folder
     + also showing a warning if too many files were discovered
-- no error when some files have never been scanned at VirusTotal
-    + instead it still goes to results but as an empty row with an explanation tooltip
+- displaying checking progress in the GUI
+- not failing right away if some files have never been scanned at VirusTotal
+    + instead those still go to results but as empty rows with an explanation tooltip
 - when VirusTotal doesn't have `type_tag` for the object, show only `type_description`
-- better loading/busy indicators
+- better looking loading/busy indicators
 - added application icon
 
 ## 0.4.0
@@ -45,4 +45,4 @@ Released on `2022-11-09`.
 
 - first version
 - reading VirusTotal API key from a config file
-- calculating SHA1 hashes getting existing scan results
+- calculating SHA1 hashes and getting existing scan results
