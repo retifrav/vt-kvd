@@ -12,13 +12,15 @@
 
 ## 0.5.0
 
-Released on `?`.
+Released on `2022-11-20`.
 
+- displaying checking progress in the GUI
 - previewing the list of files discovered while scanning the folder
     + also showing a warning if too many files were discovered
 - no error when some files have never been scanned at VirusTotal
     + instead it still goes to results but as an empty row with an explanation tooltip
 - when VirusTotal doesn't have `type_tag` for the object, show only `type_description`
+- better loading/busy indicators
 - added application icon
 
 ## 0.4.0

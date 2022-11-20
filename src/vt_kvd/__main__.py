@@ -44,7 +44,7 @@ enableDirScan: bool = False
 vtAPIkey: Optional[str] = None
 vtAgent: str = f"vt-kvd/{__version__} {__platform__}"
 
-vtClient = None
+vtClient: vt.Client = None
 
 mainWindowID: str = "main-window"
 

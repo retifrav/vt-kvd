@@ -57,7 +57,7 @@ or:
 ``` sh
 $ cd /path/to/repository/
 $ python -m build
-$ pip install ./dist/vt_kvd-0.4.0-py3-none-any.whl
+$ pip install ./dist/vt_kvd-0.5.0-py3-none-any.whl
 ```
 
 ### Dependencies
@@ -99,8 +99,8 @@ $ vt-kvd --help
 
 The application uses [platform](https://docs.python.org/3/library/platform.html) module to compose the agent string which is sent to VirusTotal API on every request. The full value can look like this:
 
-``` sh
-vt-kvd/0.1.0 macOS-12.6.1-x86_64-i386-64bit
+```
+vt-kvd/0.5.0 macOS-12.6.1-x86_64-i386-64bit
 ```
 
 It is not (*yet?*) configurable, but you should probably be aware of its existence anyway.
